@@ -1,0 +1,22 @@
+# Copy to config.yaml (or run: python -m dartvision setup) and edit.
+width: 1280
+height: 720
+fps: 30
+exposure: null          # set a number once the lighting is final
+cameras:
+  - {name: cam1, index: 0, rotate: 0}
+  - {name: cam2, index: 1, rotate: 0}
+  - {name: cam3, index: 2, rotate: 0}
+  - {name: cam4, index: 3, rotate: 0}
+detection:
+  diff_threshold: 28
+  motion_on: 0.0012
+  motion_off: 0.0005
+  settle_frames: 6
+  min_dart_px: 120
+  max_dart_px: 25000
+  fuse_tolerance_mm: 12
+record_dir: recordings
+update:
+  repo: ""              # e.g. yourname/dartvision
+  check_on_start: true

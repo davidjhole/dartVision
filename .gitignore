@@ -1,0 +1,9 @@
+# your own data - never uploaded
+config.yaml
+calib/
+recordings/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.DS_Store
