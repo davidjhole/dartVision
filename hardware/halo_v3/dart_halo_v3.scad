@@ -143,7 +143,8 @@ module solid_block(a) { sector(a) difference() { hull2d(); chamber2d(); } }   //
 // The outside skin is ONE rotate_extrude (one set of facets); the solid blocks (joints, camera bosses,
 // leg boss) are made by NOT cutting the cable channel there, rather than by gluing extra pieces on.
 // Gluing pieces on left facet steps on the outer rim that printed as faint vertical lines.
-jb_w = 12;  jb_a = ang(jb_w, 285);
+jb_w = 16;  jb_a = ang(jb_w, 285);
+joint_r = [scr_r, Rout - 6.5];   // joint screw radii: centred on the splice plate (272.5 .. 299.5)
 module wedge(a) { rotate(-a/2) rotate_extrude(angle=a, $fn=360) translate([0, -1000]) square([1000, 2000]); }
 module channel_cut(blocks) {          // blocks = [[centre angle, width], ...]
     difference() {
@@ -158,7 +159,7 @@ module seg_base(blocks=[]) {
         sector(seg_a + 2) chamber2d();
         channel_cut(concat(joint_blocks(), blocks));
         for (s=[-1,1]) rotate(s*(seg_a/2 - jb_a/2)) {
-            for (r=[scr_r, open_r1 - 3.5]) translate([r, 0, zb - 1]) cylinder(d=m3_insert, h=7);
+            for (r=joint_r) translate([r, 0, zb - 1]) cylinder(d=m3_insert, h=7);
             sector(jb_a + 1) tunnel2d();                  // cables pass through the joint
         }
     }
@@ -231,12 +232,14 @@ module diffuser() { sector(diff_arc) diffuser2d(); }
 
 // ---------- splice ----------
 module splice() {
-    a = 2*jb_a - 0.5;
+    // 6 mm plate across the back of each joint, M3 x 8 cap screws into heat-set inserts.
+    // Counterbores 3.2 deep so the heads sit flush; holes centred on the plate.
+    t = 6;  a = 2*jb_a - 0.5;
     difference() {
-        sector(a) translate([back_r0 + 0.5, zb - 4]) square([open_r1 - back_r0 - 1, 3.8]);
-        for (s=[-1,1]) rotate(s*jb_a/2) for (r=[scr_r, open_r1 - 3.5]) {
-            translate([r, 0, zb - 10]) cylinder(d=m3_clear, h=20);
-            translate([r, 0, zb - 10]) cylinder(d=6.2, h=10 - 4 + 1.6);
+        sector(a) translate([back_r0 + 0.5, zb - 0.2 - t]) square([Rout - 0.5 - back_r0 - 0.5, t]);
+        for (s=[-1,1]) rotate(s*jb_a/2) for (r=joint_r) {
+            translate([r, 0, zb - 20]) cylinder(d=3.5, h=30);
+            translate([r, 0, zb - 0.2 - t - 1]) cylinder(d=6.4, h=3.2 + 1);
         }
     }
 }

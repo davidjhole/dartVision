@@ -16,7 +16,7 @@ Every STL in `stl/` is **already in print orientation** – drop it on the plate
 | `pod.stl` | 4 | front face down | **yes – tree, build plate only** | camera housing; supports only under the 2 tabs |
 | `leg.stl` | 4 | on its side, pocket up | none | board clamps |
 | `diffuser.stl` | 8 | standing on its edge | none, **add a brim** | translucent / natural PLA; slides in from a camera opening, a few dots of clear glue hold it |
-| `splice.stl` | 8 | flat | none | joins the segments (back of ring) |
+| `splice.stl` | 8 | flat, counterbores up | none | joins the segments (back of ring); 6 mm thick, heads sit flush |
 | `knob.stl` | 4 | flat | none | thumb knob for the M6 bolt |
 | `pad.stl` | 4 | flat | none | clamp pad – stick a 20 mm rubber bumper on it |
 
