@@ -78,9 +78,9 @@ function ang(len, r) = len / r * 180 / PI;
 
 // ---------- 2D ----------
 function round_pts(c, r, a0, a1, n=24) = [for (i=[0:n]) let(a = a0 + (a1-a0)*i/n) [c[0] + r*cos(a), c[1] + r*sin(a)]];
-// front half of the outer edge is round (what you see); the back half is square
-// so the ring prints back-face-down with every wall starting on the bed
-module hull2d() { polygon(concat([A, [rc, zf]], round_pts([rc, zb + rr], rr, 90, 0), [[Rout, zb], B])); }
+// outer front edge: 45 deg chamfer (prints cleanly front-face-down, no droop);
+// back corner square. Segments print FRONT FACE DOWN.
+module hull2d() { polygon([A, [rc, zf], [Rout, zf - rr], [Rout, zb], B]); }
 module bev2d() { multmatrix([[vr, nr, 0, A[0]], [vz, nz, 0, A[1]], [0,0,1,0], [0,0,0,1]]) children(); }
 module chamber2d() {
     intersection() {                                   // LED chamber, kept clear of the front skin
@@ -88,8 +88,10 @@ module chamber2d() {
         translate([0, -1000]) square([1000, zf - skin + 1000]);
     }
     bev2d() {
-        translate([2.5, -1.3]) square([L - 5, 1.6]);    // light window
-        translate([1.0, -3.0]) square([L - 2, 1.8]);    // diffuser groove (slide-in)
+        translate([2.5, -1.3]) square([L - 2.5 + 1, 1.6]); // light window (open at the back end: the
+                                                         // diffuser's back edge sits on a ledge, no lip)
+        translate([2.7, -3.0]) square([L - 3.7, 1.8]);  // diffuser groove (slide-in); starts at 2.7 so it
+                                                         // stays under the front skin instead of cutting it off
     }
 }
 module channel2d() {
@@ -97,8 +99,20 @@ module channel2d() {
     translate([open_r0, zb - 1]) square([open_r1 - open_r0, skin + 2]);
 }
 module led2d() { bev2d() translate([L/2 - 5, cham_n]) square([10, 1.2]); }
-module diffuser2d() { bev2d() translate([1.15, -2.85]) square([L - 2.3, diff_t]); }
+module diffuser2d() { bev2d() translate([2.85, -2.85]) square([L - 4.0, diff_t]); }
 module body2d() { difference() { hull2d(); chamber2d(); channel2d(); } }
+
+// skin that stays continuous across a camera window: front plate + outer rim + back corner
+module keep2d() {
+    intersection() {
+        difference() { hull2d(); offset(delta=-skin) hull2d(); }
+        union() {
+            translate([0, zf - skin]) square([1000, 50]);          // front plate
+            translate([rc, -1000]) square([1000, 2000]);            // outer rim / wall / back corner
+        }
+    }
+}
+module window2d() { difference() { offset(delta=0.01) hull2d(); keep2d(); } }
 
 // ---------- 3D helpers ----------
 module sector(a) { rotate(-a/2) rotate_extrude(angle=a, $fn=360) children(); }
@@ -136,7 +150,7 @@ module seg_cam(leg_s=0) {
             for (s=[-1,1]) rotate(s*(win_a/2 + boss_a/2)) solid_block(boss_a);
         }
         if (leg_s != 0) rotate(leg_s*leg_off) leg_boss_cut();
-        rotate(-win_a/2) rotate_extrude(angle=win_a, $fn=360) offset(delta=0.01) hull2d();
+        rotate(-win_a/2) rotate_extrude(angle=win_a, $fn=360) window2d();
         for (s=[-1,1]) rotate(s*(win_a/2 + boss_a/2)) translate([scr_r, 0, zb - 1]) cylinder(d=m3_insert, h=8);
         // LED wires from chamber into channel, just past the bosses
         for (s=[-1,1]) rotate(s*(win_a/2 + boss_a + 2)) hull() {
@@ -160,19 +174,26 @@ module cam_cuts() {
             rotate([0, 90, 0]) cylinder(d=1.7, h=6);
     }
 }
+pod_rmax = open_r1 - 0.4;     // must pass the back lip when inserted from behind
 module pod() {
     difference() {
         union() {
-            rotate(-win_a/2 + 0.2) rotate_extrude(angle=win_a - 0.4, $fn=360) {
-                hull2d();
-                translate([B[0] - 6, bulge_z]) square([open_r1 - B[0] + 4, zb - bulge_z + 0.01]);
-            }
+            rotate(-win_a/2 + 0.2) rotate_extrude(angle=win_a - 0.4, $fn=360)
+                intersection() {
+                    difference() {
+                        union() {
+                            hull2d();
+                            translate([B[0] - 6, bulge_z]) square([pod_rmax - B[0] + 6, zb - bulge_z + 0.01]);
+                        }
+                        offset(delta=0.3) keep2d();                         // clearance to the ring skin
+                    }
+                    translate([0, -1000]) square([pod_rmax, 2000]);
+                }
             span = win_a + 2*boss_a;
             rotate(-span/2) rotate_extrude(angle=span, $fn=360)
-                translate([back_r0, zb - 4]) square([back_r1 - back_r0, 4]);   // flange
+                translate([back_r0, zb - 4]) square([back_r1 - back_r0, 4]);   // flange onto the bosses
         }
         cam_cuts();
-        sector(win_a + 1) translate([0,0]) intersection() { channel2d(); translate([B[0] + 12, zb + 6]) square(60); } // cable pass
         for (s=[-1,1]) rotate(s*(win_a/2 + boss_a/2)) translate([scr_r, 0, zb - 10]) cylinder(d=m3_clear, h=20);
     }
 }
@@ -259,13 +280,14 @@ module assembly(show_board=true) {
 }
 module brain_ghost() { rotate(-90) translate([open_r1 - 2, -55, 6]) color([0.1,0.1,0.11]) cube([44, 110, zb - 10]); }
 module back_down()  { translate([0,0,-zb]) children(); }            // back face on the bed
+module front_down() { translate([0,0,zf]) rotate([180,0,0]) children(); }   // front face on the bed
 module flip()       { rotate([180,0,0]) children(); }
 
 // ---- print orientation: every STL comes out ready to drop on the plate ----
 if (part == "assembly")  assembly();
-if (part == "seg_plain") back_down() seg_plain();
-if (part == "seg_cam_a") back_down() seg_cam(-1);   // cameras at 45 / 225 deg
-if (part == "seg_cam_b") back_down() seg_cam(1);    // cameras at 135 / 315 deg (mirror)
+if (part == "seg_plain") front_down() seg_plain();
+if (part == "seg_cam_a") front_down() seg_cam(-1);   // cameras at 45 / 225 deg
+if (part == "seg_cam_b") front_down() seg_cam(1);    // cameras at 135 / 315 deg (mirror)
 if (part == "pod")       flip() pod();               // front face down - needs supports under the 2 tabs
 if (part == "diffuser")  diffuser();
 if (part == "leg")       rotate([90,0,0]) leg();     // pocket side up

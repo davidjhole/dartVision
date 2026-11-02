@@ -10,12 +10,12 @@ Every STL in `stl/` is **already in print orientation** – drop it on the plate
 
 | File | Qty | Plate it goes on | Supports | Notes |
 |---|---|---|---|---|
-| `seg_plain.stl` | 4 | back face down | none | ring segments at 12, 3, 6, 9 o'clock |
-| `seg_cam_a.stl` | 2 | back face down | none | camera + leg segments (45° and 225°) |
-| `seg_cam_b.stl` | 2 | back face down | none | mirror version (135° and 315°) |
+| `seg_plain.stl` | 4 | front face down | none | ring segments at 12, 3, 6, 9 o'clock |
+| `seg_cam_a.stl` | 2 | front face down | none | camera + leg segments (45° and 225°) |
+| `seg_cam_b.stl` | 2 | front face down | none | mirror version (135° and 315°) |
 | `pod.stl` | 4 | front face down | **yes – tree, build plate only** | camera housing; supports only under the 2 tabs |
 | `leg.stl` | 4 | on its side, pocket up | none | board clamps |
-| `diffuser.stl` | 8 | standing on its edge | none, **add a brim** | translucent / natural PLA |
+| `diffuser.stl` | 8 | standing on its edge | none, **add a brim** | translucent / natural PLA; slides in from a camera opening, a few dots of clear glue hold it |
 | `splice.stl` | 8 | flat | none | joins the segments (back of ring) |
 | `knob.stl` | 4 | flat | none | thumb knob for the M6 bolt |
 | `pad.stl` | 4 | flat | none | clamp pad – stick a 20 mm rubber bumper on it |
@@ -36,5 +36,6 @@ covers the whole board and the LED strip sits nicely, before printing the rest.
 
 ### Layout
 600 mm across, 110 mm off the wall, fits a 451 mm bristle board. Legs at 2, 4, 8 and 10 o'clock
-(nothing above the 20 or below the 3); cameras on the diagonals. The ring's front edge is rounded,
-the hidden back is square so it prints back-face-down without supports.
+(nothing above the 20 or below the 3); cameras on the diagonals. The ring's outer front edge is a
+45° chamfer and the back is square, so segments print front-face-down with nothing floating.
+The front plate and outer rim run unbroken past each camera; the pod slides in from behind.
