@@ -78,7 +78,9 @@ function ang(len, r) = len / r * 180 / PI;
 
 // ---------- 2D ----------
 function round_pts(c, r, a0, a1, n=24) = [for (i=[0:n]) let(a = a0 + (a1-a0)*i/n) [c[0] + r*cos(a), c[1] + r*sin(a)]];
-module hull2d() { polygon(concat([A, [rc, zf]], round_pts([rc, zb + rr], rr, 90, -90), [[rc, zb], B])); }
+// front half of the outer edge is round (what you see); the back half is square
+// so the ring prints back-face-down with every wall starting on the bed
+module hull2d() { polygon(concat([A, [rc, zf]], round_pts([rc, zb + rr], rr, 90, 0), [[Rout, zb], B])); }
 module bev2d() { multmatrix([[vr, nr, 0, A[0]], [vz, nz, 0, A[1]], [0,0,1,0], [0,0,0,1]]) children(); }
 module chamber2d() {
     intersection() {                                   // LED chamber, kept clear of the front skin
@@ -256,15 +258,17 @@ module assembly(show_board=true) {
     for (i=[0:segments-1]) rotate(i*seg_a + seg_a/2) color(c_leg) splice();
 }
 module brain_ghost() { rotate(-90) translate([open_r1 - 2, -55, 6]) color([0.1,0.1,0.11]) cube([44, 110, zb - 10]); }
-module front_down() { translate([0,0,zf]) rotate([180,0,0]) children(); }
+module back_down()  { translate([0,0,-zb]) children(); }            // back face on the bed
+module flip()       { rotate([180,0,0]) children(); }
 
-if (part == "assembly") assembly();
-if (part == "seg_plain") front_down() seg_plain();
-if (part == "seg_cam_a") front_down() seg_cam(-1);   // cameras at 45 / 225 deg (leg below/above-right)
-if (part == "seg_cam_b") front_down() seg_cam(1);    // cameras at 135 / 315 deg (mirror)
-if (part == "pod")      pod();
-if (part == "diffuser") diffuser();
-if (part == "leg")      rotate([-90,0,0]) leg();
-if (part == "splice")   splice();
-if (part == "pad")      pad();
-if (part == "knob")     knob();
+// ---- print orientation: every STL comes out ready to drop on the plate ----
+if (part == "assembly")  assembly();
+if (part == "seg_plain") back_down() seg_plain();
+if (part == "seg_cam_a") back_down() seg_cam(-1);   // cameras at 45 / 225 deg
+if (part == "seg_cam_b") back_down() seg_cam(1);    // cameras at 135 / 315 deg (mirror)
+if (part == "pod")       flip() pod();               // front face down - needs supports under the 2 tabs
+if (part == "diffuser")  diffuser();
+if (part == "leg")       rotate([90,0,0]) leg();     // pocket side up
+if (part == "splice")    flip() splice();            // screw recesses up
+if (part == "pad")       pad();
+if (part == "knob")      knob();
