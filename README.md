@@ -6,7 +6,7 @@ Runs on **Windows, Linux (incl. Raspberry Pi) and macOS**. Python + OpenCV.
 
 **Easiest: with git** (makes updating a one-liner):
 ```
-git clone https://github.com/davidjhole/dartvision.git
+git clone https://github.com/davidjhole/dartVision.git
 cd dartvision
 ```
 (or download the ZIP from the GitHub Releases page and unzip it)
@@ -75,12 +75,14 @@ no need to throw again. This is how we'll tune it.
 
 ## 6. Updates
 
-On start-up (`play`, `preview`, `calibrate`) dartvision quietly checks GitHub for a newer release.
+On start-up (`play`, `preview`, `calibrate`) dartvision quietly checks GitHub for a newer version
+(the latest release if there is one, otherwise the version number on the `main` branch).
 If there is one, the scoreboard says so and you're offered the update when you quit. Or any time:
 ```
 python -m dartvision update
 ```
-Installed with git → it does a `git pull`; installed from a ZIP → it downloads the new release.
+Installed with git → it does a `git pull`; installed from a ZIP → it downloads the new version.
+What changed is listed in `CHANGELOG.md`.
 `config.yaml`, `calib/` and `recordings/` are never touched. Set `update: repo:` in `config.yaml`.
 
 ## How it works (v0.1)

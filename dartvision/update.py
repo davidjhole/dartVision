@@ -8,6 +8,7 @@ Your settings, calibrations and recordings are never touched.
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -32,19 +33,53 @@ def _ver(tag):
     return tuple(parts + [0] * (3 - len(parts)))
 
 
-def check(repo, timeout=4):
-    """Returns {'latest', 'newer', 'notes', 'url', 'zip'} or {'error': ...}."""
+def _get(url, timeout):
+    req = urllib.request.Request(url, headers=UA)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def _version_on_branch(repo, branch, timeout):
+    """Read __version__ straight from dartvision/__init__.py on GitHub."""
+    src = _get(f"https://raw.githubusercontent.com/{repo}/{branch}/dartvision/__init__.py", timeout)
+    m = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', src)
+    return m.group(1) if m else None
+
+
+def _changelog_entry(repo, branch, version, timeout):
+    """The section for `version` from CHANGELOG.md, if there is one."""
+    try:
+        text = _get(f"https://raw.githubusercontent.com/{repo}/{branch}/CHANGELOG.md", timeout)
+    except Exception:
+        return ""
+    m = re.search(rf"^## v?{re.escape(version)}\b.*?(?=^## |\Z)", text, re.M | re.S)
+    return m.group(0).strip() if m else ""
+
+
+def check(repo, timeout=4, branch="main"):
+    """Returns {'latest', 'newer', 'notes', 'url', 'zip'} or {'error': ...}.
+
+    Uses the latest GitHub release if there is one; otherwise the version number
+    in the code on the main branch (so a plain push is enough to ship an update)."""
     if not repo or "/" not in repo:
         return {"error": "no GitHub repo set (update: repo: in config.yaml)"}
     try:
-        req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases/latest", headers=UA)
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            d = json.load(r)
-    except Exception as e:  # offline, rate limited, no releases yet ...
+        d = json.loads(_get(f"https://api.github.com/repos/{repo}/releases/latest", timeout))
+        tag = d.get("tag_name", "")
+        if tag:
+            return {"latest": tag, "newer": _ver(tag) > _ver(__version__), "notes": (d.get("body") or "").strip(),
+                    "url": d.get("html_url"), "zip": d.get("zipball_url")}
+    except Exception:
+        pass  # no releases yet, offline or rate limited - try the branch
+    try:
+        v = _version_on_branch(repo, branch, timeout)
+    except Exception as e:
         return {"error": str(e)}
-    tag = d.get("tag_name", "")
-    return {"latest": tag, "newer": _ver(tag) > _ver(__version__), "notes": (d.get("body") or "").strip(),
-            "url": d.get("html_url"), "zip": d.get("zipball_url")}
+    if not v:
+        return {"error": "couldn't find a version number on GitHub"}
+    return {"latest": f"v{v}", "newer": _ver(v) > _ver(__version__),
+            "notes": _changelog_entry(repo, branch, v, timeout),
+            "url": f"https://github.com/{repo}", "zip": f"https://github.com/{repo}/archive/refs/heads/{branch}.zip"}
 
 
 def check_in_background(repo, callback):

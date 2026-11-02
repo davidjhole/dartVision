@@ -23,7 +23,7 @@ DEFAULT = {
     },
     "record_dir": "recordings",
     "update": {
-        "repo": "davidjhole/dartvision",  # GitHub "owner/name" to check for new releases
+        "repo": "davidjhole/dartVision",  # GitHub "owner/name" to check for new releases
         "check_on_start": True,
     },
 }
