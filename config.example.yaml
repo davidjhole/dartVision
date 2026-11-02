@@ -18,5 +18,5 @@ detection:
   fuse_tolerance_mm: 12
 record_dir: recordings
 update:
-  repo: ""              # e.g. yourname/dartvision
+  repo: davidjhole/dartvision
   check_on_start: true
