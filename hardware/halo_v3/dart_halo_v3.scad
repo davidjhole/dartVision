@@ -107,7 +107,8 @@ module keep2d() {
     intersection() {
         difference() { hull2d(); offset(delta=-skin) hull2d(); }
         union() {
-            translate([0, zf - skin]) square([1000, 50]);          // front plate
+            translate([A[0] + 6, zf - skin]) square([1000, 50]);   // front plate (stops short of the
+                                                                    // inner edge; the pod fills that corner)
             translate([rc, -1000]) square([1000, 2000]);            // outer rim / wall / back corner
         }
     }
