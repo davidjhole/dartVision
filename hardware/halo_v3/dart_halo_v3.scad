@@ -145,6 +145,9 @@ module solid_block(a) { sector(a) difference() { hull2d(); chamber2d(); } }   //
 // Gluing pieces on left facet steps on the outer rim that printed as faint vertical lines.
 jb_w = 16;  jb_a = ang(jb_w, 285);
 joint_r = [scr_r, Rout - 6.5];   // joint screw radii: centred on the splice plate (272.5 .. 299.5)
+joint_d = 8;                     // joint screws sit 8 mm (square to the joint line) either side of it
+// joint screw positions for the joint at angle 0, side s (+1 = the segment on the +angle side)
+module joint_holes(s) { for (r=joint_r) translate([r, s*joint_d, 0]) children(); }
 module wedge(a) { rotate(-a/2) rotate_extrude(angle=a, $fn=360) translate([0, -1000]) square([1000, 2000]); }
 module channel_cut(blocks) {          // blocks = [[centre angle, width], ...]
     difference() {
@@ -158,9 +161,9 @@ module seg_base(blocks=[]) {
         sector(seg_a) hull2d();
         sector(seg_a + 2) chamber2d();
         channel_cut(concat(joint_blocks(), blocks));
-        for (s=[-1,1]) rotate(s*(seg_a/2 - jb_a/2)) {
-            for (r=joint_r) translate([r, 0, zb - 1]) cylinder(d=m3_insert, h=7);
-            sector(jb_a + 1) tunnel2d();                  // cables pass through the joint
+        for (s=[-1,1]) {
+            rotate(s*seg_a/2) joint_holes(-s) translate([0, 0, zb - 1]) cylinder(d=m3_insert, h=7);
+            rotate(s*(seg_a/2 - jb_a/2)) sector(jb_a + 1) tunnel2d();   // cables pass through the joint
         }
     }
 }
@@ -232,14 +235,14 @@ module diffuser() { sector(diff_arc) diffuser2d(); }
 
 // ---------- splice ----------
 module splice() {
-    // 6 mm plate across the back of each joint, M3 x 8 cap screws into heat-set inserts.
-    // Counterbores 3.2 deep so the heads sit flush; holes centred on the plate.
-    t = 6;  a = 2*jb_a - 0.5;
+    // Rectangular 6 mm plate across the back of each joint (centred on the joint line),
+    // holes on a square grid, M3 x 8 cap screws into heat-set inserts, heads flush.
+    t = 6;  w = 31;
     difference() {
-        sector(a) translate([back_r0 + 0.5, zb - 0.2 - t]) square([Rout - 0.5 - back_r0 - 0.5, t]);
-        for (s=[-1,1]) rotate(s*jb_a/2) for (r=joint_r) {
-            translate([r, 0, zb - 20]) cylinder(d=3.5, h=30);
-            translate([r, 0, zb - 0.2 - t - 1]) cylinder(d=6.4, h=3.2 + 1);
+        translate([back_r0 + 0.5, -w/2, zb - 0.2 - t]) cube([Rout - 0.5 - back_r0 - 0.5, w, t]);
+        for (s=[-1,1]) joint_holes(s) {
+            translate([0, 0, zb - 20]) cylinder(d=3.5, h=30);
+            translate([0, 0, zb - 0.2 - t - 1]) cylinder(d=6.4, h=3.2 + 1);
         }
     }
 }
