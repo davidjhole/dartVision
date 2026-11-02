@@ -98,6 +98,15 @@ module channel2d() {
     intersection() { offset(delta=-skin) hull2d(); bev2d() translate([-60, -100]) square([200, 100 + wall_n]); }
     translate([open_r0, zb - 1]) square([open_r1 - open_r0, skin + 2]);
 }
+// cable tunnel through solid blocks (joints, leg bosses): pointed 45 deg roof towards the back,
+// so it prints front-face-down without supports
+tun_r = 289;
+module tunnel2d() {
+    intersection() {
+        channel2d();
+        polygon([[tun_r - 80, zb + 83], [tun_r, zb + 3], [tun_r + 80, zb + 83]]);
+    }
+}
 module led2d() { bev2d() translate([L/2 - 5, cham_n]) square([10, 1.2]); }
 module diffuser2d() { bev2d() translate([2.85, -2.85]) square([L - 4.0, diff_t]); }
 module body2d() { difference() { hull2d(); chamber2d(); channel2d(); } }
@@ -129,16 +138,18 @@ module seg_base(extra_cut=false) {
             sector(seg_a) body2d();
             for (s=[-1,1]) rotate(s*(seg_a/2 - jb_a/2)) solid_block(jb_a);
         }
-        for (s=[-1,1]) rotate(s*(seg_a/2 - jb_a/2)) for (r=[scr_r, open_r1 - 3.5])
-            translate([r, 0, zb - 1]) cylinder(d=m3_insert, h=7);
+        for (s=[-1,1]) rotate(s*(seg_a/2 - jb_a/2)) {
+            for (r=[scr_r, open_r1 - 3.5]) translate([r, 0, zb - 1]) cylinder(d=m3_insert, h=7);
+            sector(jb_a + 1) tunnel2d();                  // cables pass through the joint
+        }
     }
 }
 leg_off = 15;          // legs sit 15 deg from each camera -> 2, 4, 8, 10 o'clock
 leg_boss_a = ang(30, 285);
 module leg_boss_add() { solid_block(leg_boss_a); }
 module leg_boss_cut() {
-    for (r=[scr_r, open_r1 - 4]) translate([r, 0, zb - 1]) cylinder(d=m4_insert, h=10);
-    intersection() { sector(leg_boss_a + 2) channel2d(); translate([0,0,zb + 9]) cylinder(r=400, h=50); }
+    for (r=[scr_r, open_r1 - 4]) translate([r, 0, zb - 1]) cylinder(d=m4_insert, h=8);
+    sector(leg_boss_a + 2) tunnel2d();                    // cables pass through the leg boss
 }
 module seg_plain() { seg_base(); }
 win_a  = ang(win_w, Rin);
