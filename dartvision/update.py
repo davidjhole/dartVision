@@ -5,6 +5,7 @@
   keeping your own files (config.yaml, calib/, recordings/, .venv/).
 Your settings, calibrations and recordings are never touched.
 """
+import base64
 import io
 import json
 import os
@@ -41,7 +42,11 @@ def _get(url, timeout):
 
 def _version_on_branch(repo, branch, timeout):
     """Read __version__ straight from dartvision/__init__.py on GitHub."""
-    src = _get(f"https://raw.githubusercontent.com/{repo}/{branch}/dartvision/__init__.py", timeout)
+    try:   # API first: not cached, so a fresh push shows up straight away
+        d = json.loads(_get(f"https://api.github.com/repos/{repo}/contents/dartvision/__init__.py?ref={branch}", timeout))
+        src = base64.b64decode(d["content"]).decode("utf-8", "replace")
+    except Exception:   # rate limited etc. - raw file (may lag a few minutes behind)
+        src = _get(f"https://raw.githubusercontent.com/{repo}/{branch}/dartvision/__init__.py", timeout)
     m = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', src)
     return m.group(1) if m else None
 
