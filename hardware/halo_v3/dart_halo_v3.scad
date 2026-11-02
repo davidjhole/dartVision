@@ -122,7 +122,16 @@ module keep2d() {
         }
     }
 }
-module window2d() { difference() { offset(delta=0.01) hull2d(); keep2d(); } }
+// window cut: grown 0.01 so it cleanly opens the inner bevel and back, but kept off the outer rim
+// and front plate so it never touches the visible outside skin (that left faint lines before)
+module window2d() {
+    difference() {
+        offset(delta=0.01) hull2d();
+        keep2d();
+        translate([rc, -1000]) square([1000, 2000]);
+        translate([A[0] + 6, zf - skin]) square([1000, 50]);
+    }
+}
 
 // ---------- 3D helpers ----------
 module sector(a) { rotate(-a/2) rotate_extrude(angle=a, $fn=360) children(); }
@@ -131,13 +140,23 @@ module bev3d() { multmatrix([[vr, nr, 0, A[0]], [0,0,1,0], [vz, nz, 0, A[1]], [0
 module solid_block(a) { sector(a) difference() { hull2d(); chamber2d(); } }   // fills the cable channel
 
 // ---------- segment ----------
+// The outside skin is ONE rotate_extrude (one set of facets); the solid blocks (joints, camera bosses,
+// leg boss) are made by NOT cutting the cable channel there, rather than by gluing extra pieces on.
+// Gluing pieces on left facet steps on the outer rim that printed as faint vertical lines.
 jb_w = 12;  jb_a = ang(jb_w, 285);
-module seg_base(extra_cut=false) {
+module wedge(a) { rotate(-a/2) rotate_extrude(angle=a, $fn=360) translate([0, -1000]) square([1000, 2000]); }
+module channel_cut(blocks) {          // blocks = [[centre angle, width], ...]
     difference() {
-        union() {
-            sector(seg_a) body2d();
-            for (s=[-1,1]) rotate(s*(seg_a/2 - jb_a/2)) solid_block(jb_a);
-        }
+        sector(seg_a + 2) channel2d();
+        for (bk = blocks) rotate(bk[0]) wedge(bk[1]);
+    }
+}
+function joint_blocks() = [for (s=[-1,1]) [s*(seg_a/2 - jb_a/2 + 0.5), jb_a + 1]];
+module seg_base(blocks=[]) {
+    difference() {
+        sector(seg_a) hull2d();
+        sector(seg_a + 2) chamber2d();
+        channel_cut(concat(joint_blocks(), blocks));
         for (s=[-1,1]) rotate(s*(seg_a/2 - jb_a/2)) {
             for (r=[scr_r, open_r1 - 3.5]) translate([r, 0, zb - 1]) cylinder(d=m3_insert, h=7);
             sector(jb_a + 1) tunnel2d();                  // cables pass through the joint
@@ -146,7 +165,6 @@ module seg_base(extra_cut=false) {
 }
 leg_off = 15;          // legs sit 15 deg from each camera -> 2, 4, 8, 10 o'clock
 leg_boss_a = ang(30, 285);
-module leg_boss_add() { solid_block(leg_boss_a); }
 module leg_boss_cut() {
     for (r=[scr_r, open_r1 - 4]) translate([r, 0, zb - 1]) cylinder(d=m4_insert, h=8);
     sector(leg_boss_a + 2) tunnel2d();                    // cables pass through the leg boss
@@ -155,12 +173,10 @@ module seg_plain() { seg_base(); }
 win_a  = ang(win_w, Rin);
 boss_a = ang(boss_w, 285);
 module seg_cam(leg_s=0) {
+    blocks = concat([for (s=[-1,1]) [s*(win_a/2 + boss_a/2), boss_a]],
+                    leg_s != 0 ? [[leg_s*leg_off, leg_boss_a]] : []);
     difference() {
-        union() {
-            seg_base();
-            if (leg_s != 0) rotate(leg_s*leg_off) leg_boss_add();
-            for (s=[-1,1]) rotate(s*(win_a/2 + boss_a/2)) solid_block(boss_a);
-        }
+        seg_base(blocks);
         if (leg_s != 0) rotate(leg_s*leg_off) leg_boss_cut();
         rotate(-win_a/2) rotate_extrude(angle=win_a, $fn=360) window2d();
         for (s=[-1,1]) rotate(s*(win_a/2 + boss_a/2)) translate([scr_r, 0, zb - 1]) cylinder(d=m3_insert, h=8);
