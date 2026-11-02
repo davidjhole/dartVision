@@ -71,7 +71,7 @@ wall_n = cham_n - skin;           // back of LED wall
 function bp(u, n) = [A[0] + u*vr + n*nr, A[1] + u*vz + n*nz];
 // radius of the LED-wall back line at height z
 function wall_r(z) = let(p = bp(0, wall_n)) p[0] + vr * (p[1] - z) / (-vz);
-open_r0 = wall_r(zb) + 0.5;  open_r1 = rc + 5;   // cable slot at the back
+open_r0 = wall_r(zb) + 0.5;  open_r1 = Rout - skin;   // cable slot at the back (runs to the outer wall: no overhanging lip)
 back_r0 = B[0];  back_r1 = open_r0;              // solid back face for screws
 scr_r   = (back_r0 + back_r1) / 2;
 function ang(len, r) = len / r * 180 / PI;
