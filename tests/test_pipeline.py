@@ -13,7 +13,7 @@ from dartvision.config import DEFAULT                       # noqa: E402
 from dartvision.detect import ThrowTracker, find_dart_tip, fuse_darts, prep  # noqa: E402
 from synth import render_view, clicked_points               # noqa: E402
 
-CAMS = {"cam1": 45, "cam2": 135, "cam3": 225, "cam4": 315}
+CAMS = {"cam1": 30, "cam2": 150, "cam3": 210, "cam4": 330}   # halo v4 legs: 2, 10, 8, 4 o'clock
 
 
 def test_scoring():

@@ -1,6 +1,56 @@
 # Hardware
 
-## halo_v3 – camera + LED light ring (3D printed, PLA)
+## halo_v4 – light ring + 4 camera legs (3D printed, PLA)  ← current
+
+`halo_v4/dart_halo_v4.scad` is the parametric source (set `part`, F6, export STL).
+Every STL in `halo_v4/stl/` is **already in print orientation** – drop it on the plate as-is.
+
+What changed from v3:
+- The ring is **only the light**: no camera windows, so the LED strip and diffuser run all the way round.
+- Segments join with a **45° scarf** (sloped overlap) and 2 M3 screws per joint, square to the slope –
+  no splice plates. The slope lines the faces up and prints without supports.
+- **Cameras live in the legs.** Each leg clamps the board edge (M6 + knob) and holds a camera 24 mm
+  above the board face, so the whole thing moves with the board – wall or dartboard stand.
+
+### What to print
+
+| File | Qty | Plate | Supports | Notes |
+|---|---|---|---|---|
+| `seg_plain.stl` | 4 | front face down | none | 12, 3, 6, 9 o'clock |
+| `seg_leg_a.stl` | 2 | front face down | none | leg at 2 / 8 o'clock |
+| `seg_leg_b.stl` | 2 | front face down | none | leg at 4 / 10 o'clock |
+| `leg.stl` | 4 | on its side | none | camera + board clamp |
+| `cam_cover.stl` | 4 | flat | none | plugs into the back of each leg, notch for the USB cable |
+| `diffuser.stl` | 8 | standing on its edge | none, **add a brim** | translucent PLA/PETG |
+| `knob.stl` | 4 | flat | none | M6 bolt head sits in it |
+| `pad.stl` | 4 | flat | none | clamp pad – stick a 20 mm rubber bumper on it |
+
+Settings (PLA, 0.4 nozzle): 0.2 mm layers, **4 walls**, 15–20 % gyroid. Segments are 247 mm long:
+one per plate.
+
+**Test print first:** 2× segments that meet (e.g. seg_plain + seg_leg_a) + 1× leg + 1× cover –
+check the scarf joint pulls up flush, the camera board fits the leg and the view covers the board.
+
+### Hardware
+- 16× M3 heat-set inserts (press them in **square to the sloped joint face**)
+- 8× M3×16 + 8× M3×10 cap screws (joints: the inner screw is the long one)
+- 8× M4 heat-set inserts + 8× M4×12 cap screws (legs to ring, screwdriver in from under the leg)
+- 4× M6×50 hex bolts + 4× M6 nuts (clamps), 4× 20 mm rubber bumpers
+- 16× M2×5 self-tapping screws (camera boards)
+- Cameras: 4× OV9732 720p 100° USB (32 × 32 mm board, 28 mm holes). **Measure yours:** `lens_len`
+  (board front face to lens tip, default 12 mm) and the lens-holder width (`holder_w`, 24 mm) are
+  parameters at the top of the .scad.
+- LEDs: 24 V 10 mm COB strip, one continuous piece, ~1.65 m
+
+### Layout
+600 mm across, 110 mm off the wall, fits a 451 mm bristle board. Legs + cameras at 2, 4, 8 and
+10 o'clock (nothing above the 20 or below the 3). Lens 262 mm from the bull, 24 mm above the
+board face, aimed at the bull. LED wires leave the ring next to a leg into the cable channel;
+camera cables run along the open slot in the back of the ring.
+
+---
+
+## halo_v3 (previous version – cameras in pods inside the ring)
 
 `dart_halo_v3.scad` is the parametric source (set `part`, F6, export STL).
 Every STL in `stl/` is **already in print orientation** – drop it on the plate as-is
