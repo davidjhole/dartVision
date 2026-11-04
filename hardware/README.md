@@ -19,7 +19,7 @@ What changed from v3:
 | `seg_plain.stl` | 4 | front face down | none | 12, 3, 6, 9 o'clock |
 | `seg_leg_a.stl` | 2 | front face down | none | leg at 2 / 8 o'clock |
 | `seg_leg_b.stl` | 2 | front face down | none | leg at 4 / 10 o'clock |
-| `leg.stl` | 4 | on its side | none | camera + board clamp |
+| `leg.stl` | 4 | on its side (as saved) | none | camera + board clamp; the camera tunnel's top wall is a ~29 mm bridge – fine on a P2S, and there's 0.6 mm extra room so a little sag can't catch the camera board |
 | `cam_cover.stl` | 4 | flat | none | plugs into the back of each leg, notch for the USB cable |
 | `diffuser.stl` | 8 | standing on its edge | none, **add a brim** | translucent PLA/PETG |
 | `knob.stl` | 4 | flat | none | M6 bolt head sits in it |

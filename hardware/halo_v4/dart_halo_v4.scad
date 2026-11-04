@@ -40,7 +40,7 @@ diff_t    = 1.5;
 scarf_len = 24;   // overlap length along the ring (= D -> 45 deg slope)
 
 /* [Legs + cameras] */
-leg_w     = 38;
+leg_w     = 40;
 leg_off   = 15;   // legs sit 15 deg from the 45 deg lines -> 2, 4, 8, 10 o'clock
 clamp_gap = 11;
 lip       = 8;
@@ -169,6 +169,7 @@ T_lens  = [cam_r, 0, cam_z];
 P_pcb   = T_lens + lens_len * [cos(cam_t), 0, sin(cam_t)];
 module pcb_frame() { translate(P_pcb) rotate([0, -cam_t, 0]) children(); }   // +x = away from the board
 tun_y   = pcb_w/2 + 0.35;
+tun_sag = 0.6;                                    // extra room on the side that prints as a bridge (+y)
 tun_z0  = cam_z + lens_len*sin(cam_t) - 16.5;     // straight access tunnel from the back of the leg
 tun_z1  = tun_z0 + 33.7;
 leg_scr_r = 291;
@@ -193,7 +194,7 @@ module leg() {
                 rotate([90,0,0]) linear_extrude(leg_w, center=true) polygon(P4);
                 // camera access tunnel (camera slides in from the back of the leg)
                 intersection() {
-                    translate([cam_r - 20, -tun_y, tun_z0]) cube([60, 2*tun_y, tun_z1 - tun_z0]);
+                    translate([cam_r - 20, -tun_y, tun_z0]) cube([60, 2*tun_y + tun_sag, tun_z1 - tun_z0]);
                     pcb_frame() translate([-2, -50, -50]) cube([100, 100, 100]);
                 }
             }
@@ -228,8 +229,8 @@ module leg() {
 module cam_cover() {
     difference() {
         union() {
-            translate([Rout - 1, -tun_y - 1.5, tun_z0 - 1.5]) cube([2, 2*tun_y + 3, tun_z1 - tun_z0 + 3]);
-            translate([Rout - 4, -tun_y + 0.2, tun_z0 + 0.2]) cube([3.01, 2*tun_y - 0.4, tun_z1 - tun_z0 - 0.4]);
+            translate([Rout - 1, -tun_y - 1.5, tun_z0 - 1.5]) cube([2, 2*tun_y + tun_sag + 3, tun_z1 - tun_z0 + 3]);
+            translate([Rout - 4, -tun_y + 0.2, tun_z0 + 0.2]) cube([3.01, 2*tun_y + tun_sag - 0.4, tun_z1 - tun_z0 - 0.4]);
         }
         translate([Rout - 5, -4.5, tun_z0 - 2]) cube([10, 9, 6.5]);       // cable notch (bottom)
     }
@@ -274,7 +275,7 @@ if (part == "seg_plain") front_down() segment(0);
 if (part == "seg_leg_a") front_down() segment(-1);   // legs at 30 / 210 deg (2 and 8 o'clock)
 if (part == "seg_leg_b") front_down() segment(1);    // legs at 150 / 330 deg (10 and 4 o'clock)
 if (part == "diffuser")  diffuser();
-if (part == "leg")       side_down() leg();
+if (part == "leg")       translate([0, 0, leg_w/2]) side_down() leg();   // +y side up: the tunnel roof bridges ~29 mm
 if (part == "cam_cover") rotate([0, 90, 0]) translate([-(Rout + 1), 0, 0]) cam_cover();
 if (part == "pad")       pad();
 if (part == "knob")      knob();
