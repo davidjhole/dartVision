@@ -150,12 +150,11 @@ module segment(leg_s=0) {
         rotate( seg_a/2) joint_cut(-1);
         if (leg_s != 0) rotate(leg_s*leg_off) {
             for (y=[-10, 10]) translate([291, y, zb - 1]) cylinder(d=m4_insert, h=9);   // leg screws (M4 inserts)
-            // LED wires: chamber -> cable channel, just beside the leg
-            rotate(leg_s*(leg_boss_a/2 + 2.5)) hull() {
-                p0 = bp(L/2, cham_n + 0.5); p1 = bp(L/2, wall_n - 2);
-                translate([p0[0], 0, p0[1]]) sphere(d=4.5, $fn=16);
-                translate([p1[0], 0, p1[1]]) sphere(d=4.5, $fn=16);
-            }
+            // LED wires: from the LED chamber straight back through the leg boss and out of the
+            // ring's back face between the two leg screws, into the hole in the top of the leg
+            p0 = bp(L/2, cham_n + 0.5); p1 = bp(L/2, wall_n - 2);
+            hull() { translate([p0[0], 0, p0[1]]) sphere(d=4.5, $fn=16); translate([p1[0], 0, p1[1]]) sphere(d=4.5, $fn=16); }
+            hull() { translate([p1[0], 0, p1[1]]) sphere(d=4.5, $fn=16); translate([leg_scr_r, 0, zb - 1]) cylinder(d=5, h=1); }
         }
     }
 }
@@ -219,6 +218,7 @@ module leg() {
             rotate([0, 90, 0]) cylinder(d=(m6_af + 0.4)/cos(30), h=m6_nut_t, $fn=6);
             translate([0, -40, 0]) rotate([0, 90, 0]) cylinder(d=(m6_af + 0.4)/cos(30), h=m6_nut_t, $fn=6);
         }
+        translate([leg_scr_r, 0, tun_z1 - 1]) cylinder(d=6, h=20);     // LED wires down into the tunnel
         // ring screws: M4 x 12 up through the tunnel roof; screwdriver goes in from underneath
         for (y=[-10, 10]) {
             translate([leg_scr_r, y, tun_z1 - 1]) cylinder(d=m4_clear, h=20);
@@ -257,7 +257,8 @@ module knob() {
 //  z = 0 is the back of the board.
 // ============================================================
 /* [Stand mount] */
-hub_t      = 14;     // hub + arm thickness (behind the board)
+hub_t      = 10;     // hub thickness (behind the board)
+arm_d      = 26;     // arm depth past the hub: deeper = stiffer, there's free space behind the board
 tp_holes   = [-70, 0, 70];   // stand T-plate holes (x, mm from the middle one = board centre)
 tp_slot    = 3;      // +- slot length for T-plate hole tolerance
 tp_hole_d  = 5.5;
@@ -290,26 +291,42 @@ module hub() {
             translate([r, 0, -hub_t - 1]) cylinder(d=m4_clear, h=hub_t + 2);
             translate([r, 0, -hub_t - 0.01]) cylinder(d=8.1/cos(30), h=3.4, $fn=6);  // M4 nut trap (back)
         }
-        // lighten the middle
-        for (a=[90, 270]) rotate(a) translate([30, 0, -hub_t - 1]) cylinder(d=26, h=hub_t + 2);
     }
 }
+module hub_plan() {
+    circle(r=48);
+    translate([-85, -16]) square([170, 32]);
+    for (a=legs) rotate(a) arm_plan(0, hub_r);
+}
 module arm() {               // arm-local: x radial from the board centre
+    // T-section: thin flange against the back of the board/surround, deep web behind it.
+    // Same plastic as a flat 14 mm bar, but much stiffer when a dart pushes the ring back.
+    fl = 5;  web = 8;  end0 = hub_r + 12;  end1 = post_r0 - 10;
     difference() {
-        translate([0, 0, -hub_t]) union() {
-            translate([hub_r, -arm_w/2, 0]) cube([post_r1 - hub_r, arm_w, hub_t]);
-            translate([lap_r0 + 0.3, -arm_w/2, hub_t/2]) cube([hub_r - lap_r0, arm_w, hub_t/2]);   // front half of the lap
+        union() {
+            translate([hub_r, -arm_w/2, -fl]) cube([post_r1 - hub_r, arm_w, fl]);                   // flange
+            translate([hub_r, -web/2, -arm_d]) cube([post_r1 - hub_r, web, arm_d]);                  // web
+            translate([hub_r, -arm_w/2, -arm_d]) cube([end0 - hub_r, arm_w, arm_d]);                 // solid ends
+            translate([end1, -arm_w/2, -arm_d]) cube([post_r1 - end1, arm_w, arm_d]);
+            for (y=[-1,1]) hull() {                                                                  // gussets into the ends
+                translate([end0, y > 0 ? web/2 : -arm_w/2, -arm_d]) cube([0.01, arm_w/2 - web/2, arm_d]);
+                translate([end0 + 30, y > 0 ? web/2 : -web/2 - 0.01, -arm_d]) cube([0.01, 0.01, arm_d]);
+            }
+            for (y=[-1,1]) hull() {
+                translate([end1, y > 0 ? web/2 : -arm_w/2, -arm_d]) cube([0.01, arm_w/2 - web/2, arm_d]);
+                translate([end1 - 30, y > 0 ? web/2 : -web/2 - 0.01, -arm_d]) cube([0.01, 0.01, arm_d]);
+            }
+            translate([lap_r0 + 0.3, -arm_w/2, -hub_t/2]) cube([hub_r - lap_r0, arm_w, hub_t/2]);   // front half of the lap
         }
         for (r=arm_bolts) {
             translate([r, 0, -hub_t - 1]) cylinder(d=m4_clear, h=hub_t + 2);
             translate([r, 0, -2.3]) cylinder(d1=m4_clear, d2=8.6, h=2.31);       // countersunk: board sits flat
         }
-        for (y=[-10, 10]) {                                               // leg bolts, heads at the back
-            translate([post_bolt_r, y, -hub_t - 1]) cylinder(d=m4_clear, h=hub_t + 2);
-            translate([post_bolt_r, y, -hub_t - 0.01]) cylinder(d=8.5, h=4);
+        for (y=[-10, 10]) {                                               // leg bolts (M4 x 16), heads at the back
+            translate([post_bolt_r, y, -arm_d - 1]) cylinder(d=m4_clear, h=arm_d + 2);
+            translate([post_bolt_r, y, -arm_d - 0.01]) cylinder(d=8.5, h=arm_d - 8);
         }
-        // cable clips: 2 notches on each side edge for the camera USB lead
-        for (r=[200, 290]) translate([r, arm_w/2 - 3, -hub_t - 1]) cube([6, 4, hub_t + 2]);
+        for (r=[200, 290]) translate([r, -2, -arm_d - 1]) cube([4, 4, arm_d - fl - 2]);   // cable-tie slots in the web
     }
 }
 // stand leg: profile in (r, z), extruded across the leg
@@ -346,6 +363,7 @@ module leg_s() {
                     cube([0.01, 2*(7.75 + 7*tan(48)), 2*(7.75 + 7*tan(34))]);
             }
         }
+        translate([leg_scr_r, 0, tun_z1 - 1]) cylinder(d=6, h=20);     // LED wires down into the tunnel
         // ring screws: M4 x 12 BUTTON head, head sunk into the tunnel roof so the sled slides past;
         // screwdriver through the tunnel floor (fit the legs to the ring before mounting on the arms)
         for (y=[-10, 10]) {
@@ -388,6 +406,7 @@ module sled() {
             cylinder(d=m3_clear, h=10); translate([0, 0, 2.5 - 1.6]) cylinder(d=m3_head, h=5);
         }
         translate([post_r1 - 4, -5, tun_z0 + 3.2]) cube([8, 10, 7]);       // USB lead out
+        translate([post_r1 - 4, -3.5, tun_z1 - 5.5]) cube([8, 7, 5.3]);    // LED wires out (top)
     }
 }
 module stand_mount() {

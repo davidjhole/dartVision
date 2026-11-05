@@ -48,16 +48,25 @@ The ring and segments are the same. Instead of the board-clamp legs, print:
 
 | File | Qty | Plate | Supports | Notes |
 |---|---|---|---|---|
-| `hub.stl` | 1 | flat, back face down | none | goes between the stand's T-plate and the board |
-| `arm.stl` | 4 | flat, diagonal on the bed | none | bolt to the hub, run behind board + surround |
+| `hub.stl` | 1 | flat, back face down | none | goes between the stand's T-plate and the board (10 mm) |
+| `arm.stl` | 4 | flat side down, diagonal on the bed | none | T-section: thin flange against the board, deep web behind |
 | `leg_s.stl` | 4 | on its side (as saved) | none | rises outside the surround, holds camera + ring |
 | `sled.stl` | 4 | rail on the bed (as saved) | none | camera carrier + back cover |
 
 Fits surrounds up to **720 mm across and 40 mm thick** (`sur_r`, `sur_t` in the .scad).
 
+**Print the stand parts with 3 walls and 10 % gyroid** (they don't need the 4 walls the ring's inserts do):
+hub ~70 g, arms ~60 g each, legs ~70 g each, sleds ~15 g each – about 650 g for the set.
+(Honeycomb / truss cut-outs were tried and *add* plastic: every hole gets its own solid walls.)
+
+**LED wiring:** each leg segment has a wire hole from the LED channel straight back through the ring into
+the top of the leg below it. Feed the strip at one leg: wires go down through the leg's roof into the
+camera tunnel, out of the top notch in the sled next to the USB lead, and along the arm (cable-tie slots
+in the web) to the controller.
+
 **Assembly**
 1. Hub on the T-plate. The board's 3 screws go through the T-plate **and** the hub into the board:
-   use screws **14 mm longer** than the ones in the Winmau bag (3× e.g. 5 × 40 mm wood screws).
+   use screws **10 mm longer** than the ones in the Winmau bag (3× e.g. 5 × 40 mm wood screws).
 2. Arms to the hub: 8× M4 × 12 countersunk, nuts in the traps on the back of the hub.
 3. Legs to the ring first (on the bench): 8× M4 × 12 **button head**, screwdriver through the hole in the
    tunnel floor. Then set the ring + legs onto the arm ends: 8× M4 × 16 from behind into the legs' inserts.
