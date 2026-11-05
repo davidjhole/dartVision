@@ -50,31 +50,38 @@ The ring and segments are the same. Instead of the board-clamp legs, print:
 |---|---|---|---|---|
 | `hub.stl` | 1 | flat, back face down | none | goes between the stand's T-plate and the board (10 mm) |
 | `arm.stl` | 4 | flat side down, diagonal on the bed | none | T-section: thin flange against the board, deep web behind |
-| `leg_s.stl` | 4 | on its side (as saved) | none | rises outside the surround, holds camera + ring |
-| `sled.stl` | 4 | rail on the bed (as saved) | none | camera carrier + back cover |
+| `leg_fin.stl` | 4 | **upside down, as saved** | none | camera pod hidden under the ring + slim 18 mm fin over the surround |
+| `cam_key.stl` | 4 | flat | none | sits on top of the camera board; the ring presses it down |
+| `ebox.stl` | 1 | floor down | none | electronics box behind the board at 12 o'clock |
+| `ebox_lid.stl` | 1 | flat | none | vents over the Pi area |
+
+Print the stand parts with **3 walls, 10 % gyroid**: hub ~74 g, arms ~61 g each, fins ~58 g each,
+box + lid ~108 g – about 660 g including the electronics box.
 
 Fits surrounds up to **720 mm across and 40 mm thick** (`sur_r`, `sur_t` in the .scad).
 
-**Print the stand parts with 3 walls and 10 % gyroid** (they don't need the 4 walls the ring's inserts do):
-hub ~70 g, arms ~60 g each, legs ~70 g each, sleds ~15 g each – about 650 g for the set.
-(Honeycomb / truss cut-outs were tried and *add* plastic: every hole gets its own solid walls.)
-
-**LED wiring:** each leg segment has a wire hole from the LED channel straight back through the ring into
-the top of the leg below it. Feed the strip at one leg: wires go down through the leg's roof into the
-camera tunnel, out of the top notch in the sled next to the USB lead, and along the arm (cable-tie slots
-in the web) to the controller.
-
 **Assembly**
-1. Hub on the T-plate. The board's 3 screws go through the T-plate **and** the hub into the board:
-   use screws **10 mm longer** than the ones in the Winmau bag (3× e.g. 5 × 40 mm wood screws).
+1. Hub on the T-plate. Electronics box to the back of the hub first: 2× M4 × 16 countersunk from the front
+   of the hub into the box's inserts. Then the board's 3 screws go through the T-plate **and** the hub into
+   the board: use screws **10 mm longer** than the ones in the Winmau bag.
 2. Arms to the hub: 8× M4 × 12 countersunk, nuts in the traps on the back of the hub.
-3. Legs to the ring first (on the bench): 8× M4 × 12 **button head**, screwdriver through the hole in the
-   tunnel floor. Then set the ring + legs onto the arm ends: 8× M4 × 16 from behind into the legs' inserts.
-4. Camera: board onto the sled's 4 pins (lens forward), slide the sled in until the board seats, 2× M3 × 8
-   through the sled into the leg. USB lead out of the notch, clip it along the arm's notches.
+3. Camera: slide the camera board **down into the pod from the top** (lens towards the board centre), drop the
+   `cam_key` on top of it, plug the USB lead in and lay it in the groove under the fin.
+4. Legs to the ring on the bench (ring upside down): 8× M4 × 16 button head, up through the pod into the ring's
+   inserts. The ring holds the keys (and so the cameras) in place.
+5. Ring + legs onto the arm ends: 8× M4 × 16 from behind into the fins' inserts.
 
-**Extra hardware for the stand mount:** 16× M4 heat-set inserts (legs: 8 for the ring, 8 for the arms),
-8× M4 nuts, 8× M4 × 12 countersunk, 8× M4 × 12 button head, 8× M4 × 16 cap, 8× M3 inserts + 8× M3 × 8,
+**Cables:** USB + LED wires run in the groove on the hidden underside of each fin, down the inside face (facing
+the surround edge), out of the side just above the arm, then along the arm (cable-tie slots) into the box
+through the notches in its sides / bottom. The LED wires come down from the ring through the hole between the
+two ring screws at one leg.
+
+**Electronics box:** ESP32-C3, MOSFET module, 24 V → 5 V converter (double-sided foam tape), 5.5 × 2.1 mm panel
+DC socket (12 mm hole in the top), USB lead out of the top notch. Standoffs for a Pi 5 (M2.5 inserts) for later.
+A powered USB hub for the 4 cameras also fits.
+
+**Extra hardware:** 16× M4 heat-set inserts (8 ring, 8 fins), 2× M4 inserts (box), 8× M4 nuts, 10× M4 × 12/16
+countersunk, 8× M4 × 16 button head, 8× M4 × 16 cap, 5× M3 inserts + 5× M3 × 8 (lid), 4× M2.5 inserts (Pi),
 3 longer wood screws for the board.
 
 ### Layout

@@ -16,7 +16,7 @@
 // ============================================================
 
 /* [Render] */
-// assembly | seg_plain | seg_leg_a | seg_leg_b | diffuser | hub | arm | leg_s | sled
+// assembly | seg_plain | seg_leg_a | seg_leg_b | diffuser | hub | arm | leg_fin | cam_key | ebox | ebox_lid
 //   (wall/board-clamp version instead of the stand mount: leg | cam_cover | pad | knob)
 part = "assembly";
 
@@ -267,9 +267,9 @@ sur_t      = 42;     // surround thickness + gap (from the back of the board)
 arm_w      = 40;
 hub_r      = 130;    // hub arm length (lap joint from lap_r0 to hub_r)
 lap_r0     = 95;
-post_t     = 20;
+post_t     = 22;
 legS_w     = 44;
-post_r0    = sur_r;  post_r1 = sur_r + post_t;
+post_r0    = sur_r + 2;  post_r1 = post_r0 + post_t;
 legS_z0    = sur_t + 2;                     // underside of the top block (clears the surround)
 arm_bolts  = [103, 122];
 post_bolt_r = (post_r0 + post_r1) / 2;
@@ -279,7 +279,7 @@ module hub() {
     difference() {
         translate([0, 0, -hub_t]) union() {
             linear_extrude(hub_t) union() {
-                circle(r=48);
+                circle(r=58);
                 translate([-85, -16]) square([170, 32]);                 // bar over the T-plate holes
                 for (a=legs) rotate(a) arm_plan(0, lap_r0);
             }
@@ -287,6 +287,10 @@ module hub() {
         }
         for (x=tp_holes) hull() for (dx=[-tp_slot, tp_slot]) translate([x + dx, 0, -hub_t - 1]) cylinder(d=tp_hole_d, h=hub_t + 2);
         translate([0, 0, -1.5]) cylinder(d=10, h=2);                     // marks the board's centre hole
+        for (p=ebox_bolts) translate([p[0], p[1], 0]) {                   // electronics box: M4 x 16 countersunk
+            translate([0, 0, -hub_t - 1]) cylinder(d=m4_clear, h=hub_t + 2);   // from the front, before the board
+            translate([0, 0, -2.3]) cylinder(d1=m4_clear, d2=8.6, h=2.31);
+        }
         for (a=legs) rotate(a) for (r=arm_bolts) {
             translate([r, 0, -hub_t - 1]) cylinder(d=m4_clear, h=hub_t + 2);
             translate([r, 0, -hub_t - 0.01]) cylinder(d=8.1/cos(30), h=3.4, $fn=6);  // M4 nut trap (back)
@@ -329,89 +333,147 @@ module arm() {               // arm-local: x radial from the board centre
         for (r=[200, 290]) translate([r, -2, -arm_d - 1]) cube([4, 4, arm_d - fl - 2]);   // cable-tie slots in the web
     }
 }
-// stand leg: profile in (r, z), extruded across the leg
-PS = [
-    [post_r0,          0],
-    [post_r1,          0],
-    [post_r1,          zb - 0.2],
-    [Rin + bev_run,    zb - 0.2],
-    [cam_r - 6,        zb - 7.2],
-    [cam_r - 6,        legS_z0 + 4],
-    [cam_r - 2,        legS_z0],
-    [post_r0,          legS_z0]
-];
-tunS_r1 = post_r1 + 1;
-module leg_s() {
-    difference() {
-        union() {
-            difference() {
-                rotate([90,0,0]) linear_extrude(legS_w, center=true) polygon(PS);
-                intersection() {                                          // camera tunnel, open at the outer face
-                    translate([cam_r - 20, -tun_y, tun_z0]) cube([tunS_r1 - cam_r + 21, 2*tun_y + tun_sag, tun_z1 - tun_z0]);
-                    pcb_frame() translate([-2, -50, -50]) cube([200, 100, 100]);
-                }
-            }
-            pcb_frame() for (y=[-1,1], z=[-1,1]) translate([-2.05, y*hole_sp/2, z*hole_sp/2])
-                rotate([0, 90, 0]) cylinder(d=6, h=2.05);                 // 4 pads the camera board presses on
+// ---------- sculpted stand leg ("fin") ----------
+// A camera pod tucked under the ring (hidden from the oche by the ring itself) and a slim
+// 18 mm fin that sweeps out from behind the ring, over the surround and down its outside edge.
+// The camera board drops into the pod from the top and the ring holds it in (via cam_key).
+fin_w  = 18;   fin_rr = 3;      // fin width, edge rounding
+pod_w  = 44;   pod_r0 = cam_r - 6;  pod_r1 = Rout;
+pod_z0 = legS_z0;               // pod + fin underside, just above the surround
+module fin2d() {
+    sw = 31;                                              // 45 deg sweep over the outer edge (prints
+    offset(r=10) offset(delta=-10) polygon([              //  upside-down without supports)
+        [pod_r1 - 8,  pod_z0], [pod_r1 - 8, zb - 0.2], [post_r1 - sw, zb - 0.2],
+        [post_r1, zb - 0.2 - sw],
+        [post_r1, 0], [post_r0, 0], [post_r0, pod_z0 - 4], [post_r0 - 4, pod_z0]]);
+}
+module fin_solid() {
+    intersection() {
+        minkowski() {
+            rotate([90,0,0]) linear_extrude(fin_w - 2*fin_rr, center=true) offset(delta=-fin_rr) fin2d();
+            sphere(r=fin_rr, $fn=12);
         }
+        translate([0, -50, 0]) cube([500, 100, zb - 0.2]);
+    }
+}
+module pod_solid() {
+    intersection() {
+        minkowski() {
+            translate([pod_r0 + 4, -pod_w/2 + 4, pod_z0 + 4]) cube([pod_r1 - pod_r0 - 8, pod_w - 8, 60]);
+            sphere(r=4, $fn=16);
+        }
+        // flat top under the ring's back face, 45 deg away under the LED face (no shadow, prints clean)
+        rotate([90,0,0]) linear_extrude(100, center=true) polygon([[200, 0], [400, 0], [400, zb - 0.2],
+            [Rin + bev_run, zb - 0.2], [Rin + bev_run - 16, zb - 16.2], [200, zb - 16.2]]);
+    }
+}
+module foot() {
+    hull() {
+        for (r=[post_r0 + 3, post_r1 - 3], y=[-17, 17]) translate([r, y, 0]) cylinder(r=3, h=8, $fn=24);
+        translate([post_r0 + 1, -fin_w/2 + 1, 24]) cube([post_r1 - post_r0 - 2, fin_w - 2, 1]);
+    }
+}
+module cam_slots(up=100) {      // camera drops in from the top, along the board's own plane
+    pcb_frame() {
+        translate([-0.3, -16.25 - 0.4, -16.25 - 0.4]) cube([1.6 + 0.7, 32.5 + 0.8, up]);          // board
+        translate([1.6, -14, -14]) cube([5.5, 28, up]);                                           // parts + plug on the back
+        translate([-9.3, -holder_w/2 - 0.3, -holder_h/2 - 0.3]) cube([9.4, holder_w + 0.6, up]);  // lens holder
+        translate([-lens_len - 0.5, -7.9, -7.9]) cube([lens_len - 9 + 0.6, 15.8, up]);            // lens
+    }
+}
+gw = 7;  gd = 8;                // cable groove (USB + LED wires), on the hidden underside of the fin
+module cable_groove() {
+    translate([277, -3.5, pod_z0 - 5]) cube([6, 7, 25]);                                  // from behind the camera board
+    translate([277, -gw/2, pod_z0 - 10]) cube([post_r0 + gd - 277, gw, 10 + gd]);          // along the underside
+    translate([post_r0 - 5, -gw/2, 12]) cube([gd + 5, gw, pod_z0 + gd - 12]);              // down the inside of the fin
+    translate([post_r0 - 5, -40, 12]) cube([gd + 5, 40, 8]);                               // out of the side, onto the arm
+}
+module leg_fin() {
+    difference() {
+        union() { pod_solid(); fin_solid(); foot(); }
+        cam_slots();
         pcb_frame() {
-            translate([-9, -holder_w/2, -holder_h/2]) cube([9.1, holder_w, holder_h]);
             rotate([0, -90, 0]) cylinder(d=15.5, h=40);
-            hull() {
+            hull() {                                                                         // 100 deg view opening
                 translate([-lens_len, -7.75, -7.75]) cube([0.01, 15.5, 15.5]);
                 translate([-lens_len - 7, -(7.75 + 7*tan(48)), -(7.75 + 7*tan(34))])
                     cube([0.01, 2*(7.75 + 7*tan(48)), 2*(7.75 + 7*tan(34))]);
             }
         }
-        translate([leg_scr_r, 0, tun_z1 - 1]) cylinder(d=6, h=20);     // LED wires down into the tunnel
-        // ring screws: M4 x 12 BUTTON head, head sunk into the tunnel roof so the sled slides past;
-        // screwdriver through the tunnel floor (fit the legs to the ring before mounting on the arms)
-        for (y=[-10, 10]) {
-            translate([leg_scr_r, y, tun_z1 - 1]) cylinder(d=m4_clear, h=20);
-            translate([leg_scr_r, y, tun_z1 - 0.01]) cylinder(d=8, h=2.6);
-            translate([leg_scr_r, y, legS_z0 - 1]) cylinder(d=8.5, h=tun_z0 - legS_z0 + 2);
+        for (y=[-10, 10]) {                     // ring screws: M4 x 16 from underneath (fit legs to the ring on the bench)
+            translate([leg_scr_r, y, zb - 9]) cylinder(d=m4_clear, h=20);
+            translate([leg_scr_r, y, pod_z0 - 10]) cylinder(d=8.5, h=(zb - 9) - (pod_z0 - 10));
         }
-        // arm bolts (M4 heat-set inserts in the foot)
-        for (y=[-10, 10]) translate([post_bolt_r, y, -0.01]) cylinder(d=m4_insert, h=9);
-        // sled screws (M3 x 8 into inserts, above the tunnel)
-        for (y=[-10, 10]) translate([post_r1 - 7, y, (tun_z1 + zb)/2]) rotate([0, 90, 0]) cylinder(d=m3_insert, h=10);
+        translate([leg_scr_r, 0, pod_z0 - 5]) cylinder(d=6, h=50);     // LED wires down from the ring
+        cable_groove();
+        for (y=[-10, 10]) translate([post_bolt_r, y, -0.01]) cylinder(d=m4_insert, h=9);   // arm bolts (M4 inserts)
     }
 }
-// camera sled = back cover + carrier. Camera board: lens forward, its 4 corner holes on the 4 pins,
-// slide in until it seats on the pads in the leg, screw the cover on.
-module sled() {
-    L0 = P_pcb[0] + 1.7;                                  // just behind the camera board
+// small plug that sits on top of the camera board; the ring presses it down
+module cam_key() {
+    difference() {
+        intersection() {
+            pcb_frame() union() {
+                translate([-0.1, -16.25 - 0.2, -16.25]) cube([1.6 + 0.3, 32.5 + 0.4, 100]);
+                translate([1.8, -13.8, -14]) cube([5.1, 27.6, 100]);
+            }
+            translate([0, -50, 0]) cube([400, 100, zb - 0.4]);
+        }
+        pcb_frame() translate([-5, -20, -60]) cube([20, 40, 60 + 16.25 + 0.3]);
+    }
+}
+
+// ---------- electronics box ----------
+// Behind the board at 12 o'clock, between the two upper arms (hidden from the front by the board).
+// Holds the ESP32-C3, MOSFET module, 24 V -> 5 V converter, DC socket; room for a Pi 5 later
+// (standoffs for its 58 x 49 holes). Lid on the back, 5 screws, vents over the Pi.
+ebox_d = 36;  ebox_wall = 2.5;
+ebox_z0 = -hub_t - ebox_d;                                   // back rim (lid side)
+ebox_bolts = [[-15, 50], [15, 50]];
+lid_scr = [[-63, 140], [63, 140], [-63, 84], [63, 84], [0, 54]];
+pi_holes = [for (x=[-29, 29], y=[80.5, 129.5]) [x, y]];
+module ebox2d() { offset(r=8) offset(delta=-8) polygon([[-25, 44], [25, 44], [75, 73], [75, 150], [-75, 150], [-75, 73]]); }
+module ebox() {
     difference() {
         union() {
-            // cover plate on the outer face
-            translate([post_r1, -legS_w/2 + 1, tun_z0 + 0.3]) cube([2.5, legS_w - 2, zb - 0.7 - tun_z0 - 0.3]);
-            // plug
-            translate([post_r1 - 3, -tun_y + 0.25, tun_z0 + 0.25]) cube([3.01, 2*tun_y + tun_sag - 0.5, tun_z1 - tun_z0 - 0.5]);
-            // floor rail
-            translate([L0 + 2, -tun_y + 0.4, tun_z0 + 0.3]) cube([post_r1 - L0 - 1, 2*tun_y + tun_sag - 0.8, 2.5]);
-            // frame behind the camera board: 2 uprights at the hole columns, pads + pins at the 4 holes,
-            // trimmed to the inside of the tunnel so it slides freely
+            translate([0, 0, ebox_z0]) difference() {
+                linear_extrude(ebox_d) ebox2d();
+                translate([0, 0, -1]) linear_extrude(ebox_d - ebox_wall + 1) offset(delta=-ebox_wall) ebox2d();
+            }
             intersection() {
-                translate([0, -tun_y + 0.4, tun_z0 + 0.3]) cube([400, 2*tun_y + tun_sag - 0.8, tun_z1 - tun_z0 - 0.6]);
+                translate([0, 0, ebox_z0]) linear_extrude(ebox_d) ebox2d();
                 union() {
-                    pcb_frame() for (y=[-1,1]) {
-                        translate([1.65, y*hole_sp/2 - 2.5, -hole_sp/2 - 3]) cube([3, 5, hole_sp + 6]);
-                        for (z=[-1,1]) translate([0.25, y*hole_sp/2, z*hole_sp/2]) rotate([0, 90, 0]) cylinder(d=1.8, h=1.5);
-                        translate([1.65, y*hole_sp/2 - 2.5, -hole_sp/2 - 8]) cube([7, 5, 6]);      // tie to the rail
-                    }
+                    for (p=ebox_bolts) translate([p[0], p[1], -hub_t - 12]) cylinder(d=11, h=12);
+                    for (p=lid_scr) translate([p[0], p[1], ebox_z0]) cylinder(d=8, h=ebox_d);
+                    for (p=pi_holes) translate([p[0], p[1], -hub_t - ebox_wall - 5]) cylinder(d=6.5, h=5.01);
                 }
             }
         }
-        for (y=[-10, 10]) translate([post_r1 - 1, y, (tun_z1 + zb)/2]) rotate([0, 90, 0]) {
-            cylinder(d=m3_clear, h=10); translate([0, 0, 2.5 - 1.6]) cylinder(d=m3_head, h=5);
+        for (p=ebox_bolts) translate([p[0], p[1], -hub_t - 9]) cylinder(d=m4_insert, h=9.01);
+        for (p=lid_scr)    translate([p[0], p[1], ebox_z0 - 0.01]) cylinder(d=m3_insert, h=7);
+        for (p=pi_holes)   translate([p[0], p[1], -hub_t - ebox_wall - 5.01]) cylinder(d=3.6, h=4.5);  // M2.5 inserts
+        // cable notches open at the lid edge (lay the cables in, the lid closes them)
+        translate([-18, 30, ebox_z0 - 1]) cube([36, 20, 15]);                                   // from the lower arms
+        for (s=[-1, 1]) translate([s*50, 58.5, ebox_z0 - 1]) rotate(s*31) translate([-15, -8, 0]) cube([30, 16, 15]);  // upper arms
+        translate([-52, 140, ebox_z0 - 1]) cube([24, 20, 11]);                                  // USB lead out to the laptop / screen
+        translate([40, 140, ebox_z0 + 18]) rotate([-90, 0, 0]) cylinder(d=12.2, h=20);          // 5.5 x 2.1 panel DC socket (24 V in)
+    }
+}
+module ebox_lid() {      // lid-local: outer face at z = 0, lip towards +z (into the box)
+    difference() {
+        union() {
+            linear_extrude(2.5) ebox2d();
+            translate([0, 0, 2.5]) linear_extrude(3) difference() {
+                offset(delta=-ebox_wall - 0.3) ebox2d(); offset(delta=-ebox_wall - 2.3) ebox2d(); }
         }
-        translate([post_r1 - 4, -5, tun_z0 + 3.2]) cube([8, 10, 7]);       // USB lead out
-        translate([post_r1 - 4, -3.5, tun_z1 - 5.5]) cube([8, 7, 5.3]);    // LED wires out (top)
+        for (p=lid_scr) translate([p[0], p[1], -1]) cylinder(d=m3_clear, h=10);
+        for (i=[0:7]) translate([-45 + i*12.85 - 2, 85, -1]) cube([4, 42, 10]);                  // vents over the Pi
     }
 }
 module stand_mount() {
     color(c_leg) hub();
-    for (a=legs) rotate(a) { color(c_leg) arm(); color(c_leg) leg_s(); color([0.3,0.3,0.32]) sled(); }
+    color(c_leg) ebox(); color(c_leg) translate([0, 0, ebox_z0 - 2.5]) ebox_lid();
+    for (a=legs) rotate(a) { color(c_leg) arm(); color(c_leg) leg_fin(); color([0.3,0.3,0.32]) cam_key(); }
 }
 module surround_model() { color([0.08,0.08,0.09]) difference() { cylinder(r=355, h=40, $fn=180); translate([0,0,-1]) cylinder(r=Rb + 1, h=42, $fn=180); } }
 
@@ -455,6 +517,8 @@ if (part == "pad")       pad();
 // stand mount parts
 if (part == "hub")       translate([0, 0, hub_t]) hub();                       // flat, back face down
 if (part == "arm")       rotate(45) translate([-(lap_r0 + post_r1)/2, 0, 0]) rotate([180, 0, 0]) arm();   // front face down, diagonal on the bed
-if (part == "leg_s")     translate([0, 0, legS_w/2]) side_down() leg_s();
-if (part == "sled")      translate([0, 0, -tun_z0 - 0.25]) sled();               // rail on the bed
+if (part == "leg_fin")   translate([0, 0, zb - 0.2]) rotate([180, 0, 0]) leg_fin();   // upside down: pod top + fin top on the bed
+if (part == "ebox")      translate([0, 0, -hub_t]) rotate([180, 0, 0]) ebox();     // floor on the bed
+if (part == "ebox_lid")  ebox_lid();
+if (part == "cam_key")   translate([0, 0, zb - 0.4]) rotate([180, 0, 0]) cam_key();
 if (part == "knob")      knob();
