@@ -16,7 +16,8 @@
 // ============================================================
 
 /* [Render] */
-// assembly | seg_plain | seg_leg_a | seg_leg_b | diffuser | hub | arm | leg_fin | cam_key | ebox | ebox_lid
+// assembly | seg_plain | seg_leg_a | seg_leg_b | diffuser | hub | arm | leg_fin | cam_key
+//   (later: ebox | ebox_lid - electronics box, space reserved behind the board at 12 o'clock)
 //   (wall/board-clamp version instead of the stand mount: leg | cam_cover | pad | knob)
 part = "assembly";
 
@@ -265,14 +266,15 @@ tp_hole_d  = 5.5;
 sur_r      = 362;    // surround outer radius + gap (fits surrounds up to 720 mm across)
 sur_t      = 42;     // surround thickness + gap (from the back of the board)
 arm_w      = 40;
-hub_r      = 130;    // hub arm length (lap joint from lap_r0 to hub_r)
+hub_r      = 135;    // hub arm length: the arm root sits on the back of the hub from lap_r0 to hub_r
 lap_r0     = 95;
-post_t     = 22;
+post_t     = 24;
 legS_w     = 44;
 post_r0    = sur_r + 2;  post_r1 = post_r0 + post_t;
 legS_z0    = sur_t + 2;                     // underside of the top block (clears the surround)
-arm_bolts  = [103, 122];
+arm_bolts  = [102, 130];   // 28 mm apart (hub kept small enough for the bed)
 post_bolt_r = (post_r0 + post_r1) / 2;
+leg_bolts = [[post_r0 + 6, 0], [post_r1 - 6, 0]];   // arm-to-leg bolts one behind the other: foot stays fin-width
 
 module arm_plan(r0, r1) { translate([r0, -arm_w/2]) square([r1 - r0, arm_w]); }
 module hub() {
@@ -281,9 +283,8 @@ module hub() {
             linear_extrude(hub_t) union() {
                 circle(r=58);
                 translate([-85, -16]) square([170, 32]);                 // bar over the T-plate holes
-                for (a=legs) rotate(a) arm_plan(0, lap_r0);
+                for (a=legs) rotate(a) arm_plan(0, hub_r);
             }
-            linear_extrude(hub_t/2) for (a=legs) rotate(a) arm_plan(lap_r0 - 0.01, hub_r);   // back half of the lap
         }
         for (x=tp_holes) hull() for (dx=[-tp_slot, tp_slot]) translate([x + dx, 0, -hub_t - 1]) cylinder(d=tp_hole_d, h=hub_t + 2);
         translate([0, 0, -1.5]) cylinder(d=10, h=2);                     // marks the board's centre hole
@@ -291,9 +292,9 @@ module hub() {
             translate([0, 0, -hub_t - 1]) cylinder(d=m4_clear, h=hub_t + 2);   // from the front, before the board
             translate([0, 0, -2.3]) cylinder(d1=m4_clear, d2=8.6, h=2.31);
         }
-        for (a=legs) rotate(a) for (r=arm_bolts) {
+        for (a=legs) rotate(a) for (r=arm_bolts) {                     // M4 x 30 countersunk from the front
             translate([r, 0, -hub_t - 1]) cylinder(d=m4_clear, h=hub_t + 2);
-            translate([r, 0, -hub_t - 0.01]) cylinder(d=8.1/cos(30), h=3.4, $fn=6);  // M4 nut trap (back)
+            translate([r, 0, -2.3]) cylinder(d1=m4_clear, d2=8.6, h=2.31);
         }
     }
 }
@@ -303,34 +304,34 @@ module hub_plan() {
     for (a=legs) rotate(a) arm_plan(0, hub_r);
 }
 module arm() {               // arm-local: x radial from the board centre
-    // T-section: thin flange against the back of the board/surround, deep web behind it.
-    // Same plastic as a flat 14 mm bar, but much stiffer when a dart pushes the ring back.
-    fl = 5;  web = 8;  end0 = hub_r + 12;  end1 = post_r0 - 10;
+    // A plain bar 40 x 26: printed with 3 walls + 10 % infill it is a closed box, which is ~7x
+    // stiffer in twist than an open T for about the same plastic. The root sits on the BACK of the
+    // hub (r lap_r0..hub_r) and is bolted through both with 2 bolts 45 mm apart.
     difference() {
         union() {
-            translate([hub_r, -arm_w/2, -fl]) cube([post_r1 - hub_r, arm_w, fl]);                   // flange
-            translate([hub_r, -web/2, -arm_d]) cube([post_r1 - hub_r, web, arm_d]);                  // web
-            translate([hub_r, -arm_w/2, -arm_d]) cube([end0 - hub_r, arm_w, arm_d]);                 // solid ends
-            translate([end1, -arm_w/2, -arm_d]) cube([post_r1 - end1, arm_w, arm_d]);
-            for (y=[-1,1]) hull() {                                                                  // gussets into the ends
-                translate([end0, y > 0 ? web/2 : -arm_w/2, -arm_d]) cube([0.01, arm_w/2 - web/2, arm_d]);
-                translate([end0 + 30, y > 0 ? web/2 : -web/2 - 0.01, -arm_d]) cube([0.01, 0.01, arm_d]);
-            }
-            for (y=[-1,1]) hull() {
-                translate([end1, y > 0 ? web/2 : -arm_w/2, -arm_d]) cube([0.01, arm_w/2 - web/2, arm_d]);
-                translate([end1 - 30, y > 0 ? web/2 : -web/2 - 0.01, -arm_d]) cube([0.01, 0.01, arm_d]);
-            }
-            translate([lap_r0 + 0.3, -arm_w/2, -hub_t/2]) cube([hub_r - lap_r0, arm_w, hub_t/2]);   // front half of the lap
+            translate([lap_r0, -arm_w/2, -arm_d]) cube([hub_r - lap_r0 + 0.01, arm_w, arm_d - hub_t]);   // behind the hub
+            translate([hub_r, -arm_w/2, -arm_d]) cube([post_r1 - hub_r, arm_w, arm_d]);                     // behind board + surround
         }
         for (r=arm_bolts) {
-            translate([r, 0, -hub_t - 1]) cylinder(d=m4_clear, h=hub_t + 2);
-            translate([r, 0, -2.3]) cylinder(d1=m4_clear, d2=8.6, h=2.31);       // countersunk: board sits flat
+            translate([r, 0, -arm_d - 1]) cylinder(d=m4_clear, h=arm_d + 2);
+            translate([r, 0, -arm_d - 0.01]) cylinder(d=8.1/cos(30), h=4, $fn=6);       // M4 nut (back)
         }
-        for (y=[-10, 10]) {                                               // leg bolts (M4 x 16), heads at the back
-            translate([post_bolt_r, y, -arm_d - 1]) cylinder(d=m4_clear, h=arm_d + 2);
-            translate([post_bolt_r, y, -arm_d - 0.01]) cylinder(d=8.5, h=arm_d - 8);
+        for (p=leg_bolts) {                                               // leg bolts (M4 x 16), heads at the back
+            translate([p[0], p[1], -arm_d - 1]) cylinder(d=m4_clear, h=arm_d + 2);
+            translate([p[0], p[1], -arm_d - 0.01]) cylinder(d=8.5, h=arm_d - 8);
         }
-        for (r=[200, 290]) translate([r, -2, -arm_d - 1]) cube([4, 4, arm_d - fl - 2]);   // cable-tie slots in the web
+        // past the surround the arm narrows to the fin's width and ends in a rounded tip
+        translate([0, 0, -arm_d - 1]) linear_extrude(arm_d + 2) difference() {
+            translate([280, -50]) square([200, 100]);
+            hull() {                                                       // taper, finished behind the surround
+                translate([280, -arm_w/2]) square([1, arm_w]);
+                translate([sur_r - 16, -fin_w/2]) square([1, fin_w]);
+            }
+            hull() {                                                       // then fin-width to a rounded tip
+                translate([sur_r - 16, -fin_w/2]) square([1, fin_w]);
+                translate([post_r1 - fin_w/2, 0]) circle(d=fin_w);
+            }
+        }
     }
 }
 // ---------- sculpted stand leg ("fin") ----------
@@ -359,15 +360,37 @@ module fin_solid() {
 module pod_solid() {
     intersection() {
         minkowski() {
-            translate([pod_r0 + 4, -pod_w/2 + 4, pod_z0 + 4]) cube([pod_r1 - pod_r0 - 8, pod_w - 8, 60]);
-            sphere(r=4, $fn=16);
+            translate([pod_r0 + 8, -pod_w/2 + 8, pod_z0 + 8]) cube([pod_r1 - pod_r0 - 16, pod_w - 16, 60]);
+            sphere(r=8, $fn=24);
         }
         // flat top under the ring's back face, 45 deg away under the LED face (no shadow, prints clean)
         rotate([90,0,0]) linear_extrude(100, center=true) polygon([[200, 0], [400, 0], [400, zb - 0.2],
             [Rin + bev_run, zb - 0.2], [Rin + bev_run - 16, zb - 16.2], [200, zb - 16.2]]);
     }
 }
+// slice of a rounded bar: at radius r, width w, from z0 to z1, corner radius cr
+module rslice(r, w, z0, z1, cr) {
+    translate([r, 0, 0]) rotate([0, 90, 0]) linear_extrude(0.01)
+        offset(r=cr) offset(delta=-cr) translate([-z1, -w/2]) square([z1 - z0, w]);
+}
+function blend_w(t, w0, w1) = w1 + (w0 - w1) * (1 + cos(180*t)) / 2;
+module pod_blend() {                 // pod (44 wide) flows into the fin (18 wide) on a smooth curve
+    n = 10;  r0 = pod_r1 - 12;  r1 = pod_r1 + 38;
+    for (i=[0:n-1]) hull() for (k=[i, i+1]) {
+        t = k / n;
+        rslice(r0 + (r1 - r0)*t, blend_w(t, pod_w - 0.6, fin_w), pod_z0 + 0.3, zb - 0.2, 3 + 5*(1 - t));
+    }
+}
 module foot() {
+    n = 8;                              // fin flares smoothly into the foot
+    for (i=[0:n-1]) hull() for (k=[i, i+1]) {
+        t = k / n;  z = 30 - 30*t;  w = blend_w(1 - t, 40, fin_w);
+        translate([0, 0, z]) linear_extrude(0.01) offset(r=5) offset(delta=-5)
+            translate([post_r0, -w/2]) square([post_r1 - post_r0, w]);
+    }
+    hull() for (r=[post_r0 + 5, post_r1 - 5], y=[-15, 15]) translate([r, y, 0]) cylinder(r=5, h=0.01, $fn=24);
+}
+module foot_old() {
     hull() {
         for (r=[post_r0 + 3, post_r1 - 3], y=[-17, 17]) translate([r, y, 0]) cylinder(r=3, h=8, $fn=24);
         translate([post_r0 + 1, -fin_w/2 + 1, 24]) cube([post_r1 - post_r0 - 2, fin_w - 2, 1]);
@@ -390,7 +413,7 @@ module cable_groove() {
 }
 module leg_fin() {
     difference() {
-        union() { pod_solid(); fin_solid(); foot(); }
+        union() { pod_solid(); pod_blend(); fin_solid(); }
         cam_slots();
         pcb_frame() {
             rotate([0, -90, 0]) cylinder(d=15.5, h=40);
@@ -406,7 +429,7 @@ module leg_fin() {
         }
         translate([leg_scr_r, 0, pod_z0 - 5]) cylinder(d=6, h=50);     // LED wires down from the ring
         cable_groove();
-        for (y=[-10, 10]) translate([post_bolt_r, y, -0.01]) cylinder(d=m4_insert, h=9);   // arm bolts (M4 inserts)
+        for (p=leg_bolts) translate([p[0], p[1], -0.01]) cylinder(d=m4_insert, h=9);   // arm bolts (M4 inserts)
     }
 }
 // small plug that sits on top of the camera board; the ring presses it down
@@ -472,7 +495,7 @@ module ebox_lid() {      // lid-local: outer face at z = 0, lip towards +z (into
 }
 module stand_mount() {
     color(c_leg) hub();
-    color(c_leg) ebox(); color(c_leg) translate([0, 0, ebox_z0 - 2.5]) ebox_lid();
+    // electronics box (ebox / ebox_lid) not fitted yet: its space at 12 o'clock and the 2 hub bolts are kept
     for (a=legs) rotate(a) { color(c_leg) arm(); color(c_leg) leg_fin(); color([0.3,0.3,0.32]) cam_key(); }
 }
 module surround_model() { color([0.08,0.08,0.09]) difference() { cylinder(r=355, h=40, $fn=180); translate([0,0,-1]) cylinder(r=Rb + 1, h=42, $fn=180); } }
@@ -516,7 +539,7 @@ if (part == "cam_cover") rotate([0, 90, 0]) translate([-(Rout + 1), 0, 0]) cam_c
 if (part == "pad")       pad();
 // stand mount parts
 if (part == "hub")       translate([0, 0, hub_t]) hub();                       // flat, back face down
-if (part == "arm")       rotate(45) translate([-(lap_r0 + post_r1)/2, 0, 0]) rotate([180, 0, 0]) arm();   // front face down, diagonal on the bed
+if (part == "arm")       rotate(45) translate([-(lap_r0 + post_r1)/2, 0, arm_d]) arm();   // back face down, diagonal on the bed
 if (part == "leg_fin")   translate([0, 0, zb - 0.2]) rotate([180, 0, 0]) leg_fin();   // upside down: pod top + fin top on the bed
 if (part == "ebox")      translate([0, 0, -hub_t]) rotate([180, 0, 0]) ebox();     // floor on the bed
 if (part == "ebox_lid")  ebox_lid();
