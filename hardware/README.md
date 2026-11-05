@@ -42,6 +42,32 @@ check the scarf joint pulls up flush, the camera board fits the leg and the view
   parameters at the top of the .scad.
 - LEDs: 24 V 10 mm COB strip, one continuous piece, ~1.65 m
 
+### Stand mount (Winmau stand + any surround, no cutting) ← use this on a stand
+
+The ring and segments are the same. Instead of the board-clamp legs, print:
+
+| File | Qty | Plate | Supports | Notes |
+|---|---|---|---|---|
+| `hub.stl` | 1 | flat, back face down | none | goes between the stand's T-plate and the board |
+| `arm.stl` | 4 | flat, diagonal on the bed | none | bolt to the hub, run behind board + surround |
+| `leg_s.stl` | 4 | on its side (as saved) | none | rises outside the surround, holds camera + ring |
+| `sled.stl` | 4 | rail on the bed (as saved) | none | camera carrier + back cover |
+
+Fits surrounds up to **720 mm across and 40 mm thick** (`sur_r`, `sur_t` in the .scad).
+
+**Assembly**
+1. Hub on the T-plate. The board's 3 screws go through the T-plate **and** the hub into the board:
+   use screws **14 mm longer** than the ones in the Winmau bag (3× e.g. 5 × 40 mm wood screws).
+2. Arms to the hub: 8× M4 × 12 countersunk, nuts in the traps on the back of the hub.
+3. Legs to the ring first (on the bench): 8× M4 × 12 **button head**, screwdriver through the hole in the
+   tunnel floor. Then set the ring + legs onto the arm ends: 8× M4 × 16 from behind into the legs' inserts.
+4. Camera: board onto the sled's 4 pins (lens forward), slide the sled in until the board seats, 2× M3 × 8
+   through the sled into the leg. USB lead out of the notch, clip it along the arm's notches.
+
+**Extra hardware for the stand mount:** 16× M4 heat-set inserts (legs: 8 for the ring, 8 for the arms),
+8× M4 nuts, 8× M4 × 12 countersunk, 8× M4 × 12 button head, 8× M4 × 16 cap, 8× M3 inserts + 8× M3 × 8,
+3 longer wood screws for the board.
+
 ### Layout
 600 mm across, 110 mm off the wall, fits a 451 mm bristle board. Legs + cameras at 2, 4, 8 and
 10 o'clock (nothing above the 20 or below the 3). Lens 262 mm from the bull, 24 mm above the
