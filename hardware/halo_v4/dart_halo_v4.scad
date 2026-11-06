@@ -430,9 +430,9 @@ function piece_floor(k, c) =
     k == 1 ? floor_z(-holder_d - c, -holder_h/2 - c) :
     k == 2 ? floor_z(-lens_max - 0.5, -(15.5/2 + c)) :
              floor_z(1.6 - c, -con_w/2 - 1 - c);
-module cam_columns(c, top=200) {      // every piece swept straight up from its flat floor
-    for (k=[0:3]) translate([0, 0, piece_floor(k, c)]) linear_extrude(top - piece_floor(k, c))
-        projection() pcb_frame() cam_piece(k, c);
+module cam_columns(c, top=200) {      // every piece swept straight up from ONE flat floor (the board's
+    f = piece_floor(0, c);             //  lowest corner): one level ceiling = one clean bridge upside down
+    translate([0, 0, f]) linear_extrude(top - f) union() for (k=[0:3]) projection() pcb_frame() cam_piece(k, c);
 }
 module cam_slots() {
     cam_columns(0.35);
