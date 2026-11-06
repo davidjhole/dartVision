@@ -50,8 +50,8 @@ The ring and segments are the same. Instead of the board-clamp legs, print:
 |---|---|---|---|---|
 | `hub.stl` | 1 | flat | none | goes between the stand's T-plate and the board (10 mm) |
 | `arm.stl` | 4 | back face down, diagonal on the bed (as saved) | none | solid bar – prints as a closed box |
-| `leg_fin.stl` | 4 | **upside down, as saved** | none | camera pod hidden under the ring + slim 18 mm fin over the surround |
-| `cam_key.stl` | 4 | flat | none | sits on top of the camera board; the ring presses it down |
+| `leg_fin.stl` | 4 | **upside down, as saved** | none | camera pod hidden under the ring + slim 18 mm fin; flat foot matches the arm tip |
+| `cam_key.stl` | 4 | flat | none | push-fit plug on top of the camera board (crush ribs); the ring sits on it |
 
 Print the stand parts with **3 walls, 10 % gyroid**: hub ~83 g, arms ~70 g each, fins ~56 g each –
 about 590 g for the set. Fits surrounds up to **720 mm across and 40 mm thick** (`sur_r`, `sur_t`).
@@ -65,8 +65,10 @@ ring ~1 mm and it springs back.
    use screws **10 mm longer** than the ones in the Winmau bag.
 2. Arms onto the **back** of the hub: 8× M4 × 30 countersunk from the front of the hub, nuts in the traps on
    the back of the arms (do this before the board goes on).
-3. Camera: slide the camera board **down into the pod from the top** (lens towards the board centre), drop the
-   `cam_key` on top of it, plug the USB lead in and lay it in the groove under the fin.
+3. Camera: plug the lead in first, then lower the whole camera **lens on** into the pod from the top, connector
+   **sideways** (the side pocket), lens towards the board centre. Lead goes down through the floor into the groove
+   under the fin. Push the `cam_key` in on top. Cameras sit rotated 90°: set `rotate: 90` for them in config.yaml.
+   The pocket takes the lens wound anywhere from 18 to 25 mm out from the board.
 4. Fins to the ring on the bench (ring upside down): 8× M4 × 16 button head, up through the pod into the ring's
    inserts. The ring holds the keys (and so the cameras) in place.
 5. Ring + fins onto the arm tips: 8× M4 × 16 from behind into the fins' inserts (2 per fin, one behind the other).
