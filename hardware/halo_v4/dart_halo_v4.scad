@@ -415,8 +415,27 @@ module cam_body(c=0) {          // the camera as a solid (c = clearance all roun
     translate([-lens_max - 0.5, 0, 0]) rotate([0, 90, 0]) cylinder(d=15.5 + 2*c, h=lens_max - holder_d + 1);  // lens, any setting
     translate([1.6 - c, -16.25 - plug - c, -con_w/2 - 1 - c]) cube([con_out + 2*c, plug + 4 + 2*c, con_w + 2 + 2*c]);  // connector + plug
 }
-module cam_slots(up=100) {      // the camera's shape swept straight up (it drops in from the top)
-    pcb_frame() hull() { cam_body(0.35); translate([0, 0, up]) cam_body(0.35); }
+// The camera's pieces, each with the lowest point of its (5 deg tilted) underside: [x0, z0] in the
+// camera frame. The pocket is each piece's footprint taken straight up from a FLAT floor at that lowest
+// point - a flat floor prints as a clean bridge upside down (a 5 deg slope printed as a floating ledge).
+function floor_z(x0, z0) = P_pcb[2] + x0*sin(cam_t) + z0*cos(cam_t);
+module cam_piece(k, c) {
+    if (k == 0) translate([-fc - c, -16.25 - c, -16.25 - c]) cube([fc + 1.6 + bc + 2*c, 32.5 + 2*c, 32.5 + 2*c]);
+    if (k == 1) translate([-holder_d - c, -holder_w/2 - c, -holder_h/2 - c]) cube([holder_d + 2*c, holder_w + 2*c, holder_h + 2*c]);
+    if (k == 2) translate([-lens_max - 0.5, 0, 0]) rotate([0, 90, 0]) cylinder(d=15.5 + 2*c, h=lens_max - holder_d + 1);
+    if (k == 3) translate([1.6 - c, -16.25 - plug - c, -con_w/2 - 1 - c]) cube([con_out + 2*c, plug + 4 + 2*c, con_w + 2 + 2*c]);
+}
+function piece_floor(k, c) =
+    k == 0 ? floor_z(-fc - c, -16.25 - c) :
+    k == 1 ? floor_z(-holder_d - c, -holder_h/2 - c) :
+    k == 2 ? floor_z(-lens_max - 0.5, -(15.5/2 + c)) :
+             floor_z(1.6 - c, -con_w/2 - 1 - c);
+module cam_columns(c, top=200) {      // every piece swept straight up from its flat floor
+    for (k=[0:3]) translate([0, 0, piece_floor(k, c)]) linear_extrude(top - piece_floor(k, c))
+        projection() pcb_frame() cam_piece(k, c);
+}
+module cam_slots() {
+    cam_columns(0.35);
     // cable from the plug down through the floor to the groove under the fin
     pcb_frame() translate([1.6 - 0.35, -16.25 - plug - 0.35, -60]) cube([con_out + 0.7, 8, 60]);
 }
@@ -472,18 +491,18 @@ module leg_fin() {
 // plug that fills the slots above the camera: holds it down, closes the slots, the ring sits on it.
 // Crush ribs on its sides make it a push fit, so it stays in before the ring goes on.
 module cam_key() {
-    kz = 16.25 + 0.35;           // sits on the top edge of the camera board (the empty space above the lens,
+    kz = 16.25 + 0.35;           // sits on the top edge of the camera board (the space above the lens,
     intersection() {             //  holder and plug stays empty - only the board needs holding down)
-        pcb_frame() hull() { cam_body(0.2); translate([0, 0, 100]) cam_body(0.2); }
+        cam_columns(0.2);
         pcb_frame() translate([-60, -60, kz]) cube([120, 120, 100]);
         translate([0, -60, 0]) cube([400, 120, zb - 0.4]);
     }
     intersection() {             // crush ribs, 0.25 mm proud, on the front and back faces
         pcb_frame() {
-            translate([-lens_max - 0.5 - 0.2 - 0.25, -1, -100]) cube([0.75, 2, 300]);
+            translate([-lens_max - 0.5 - 0.25, -1, -100]) cube([0.75, 2, 300]);
             translate([1.6 + con_out + 0.2 - 0.5, -16.25 - plug/2 - 1, -100]) cube([0.75, 2, 300]);
         }
-        pcb_frame() hull() { cam_body(0.45); translate([0, 0, 100]) cam_body(0.45); }
+        cam_columns(0.45);
         pcb_frame() translate([-60, -60, kz + 1]) cube([120, 120, 100]);
         translate([0, -60, 0]) cube([400, 120, zb - 3]);
     }
