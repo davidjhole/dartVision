@@ -366,8 +366,10 @@ module pod_solid() {
             sphere(r=8, $fn=24);
         }
         // flat top under the ring's back face, 45 deg away under the LED face (no shadow, prints clean)
+        // 45 deg all the way down at the front (was a flat shelf, which printed upside down was a
+        // floating ledge once the pod got longer for the real lens)
         rotate([90,0,0]) linear_extrude(100, center=true) polygon([[200, 0], [400, 0], [400, zb - 0.2],
-            [Rin + bev_run, zb - 0.2], [Rin + bev_run - 16, zb - 16.2], [200, zb - 16.2]]);
+            [Rin + bev_run, zb - 0.2], [Rin + bev_run - (zb - 0.2), 0]]);
     }
 }
 // slice of a rounded bar: at radius r, width w, from z0 to z1, corner radius cr
@@ -452,8 +454,10 @@ module leg_fin() {
             hull() {                                       // 100 deg view opening, clear for any lens setting:
                 fl = lens_max - lens_min + 12;              // starts where the lens tip is when wound fully in
                 translate([-lens_min, -8.5, -8.5]) cube([0.01, 17, 17]);
-                translate([-lens_min - fl, -(8.5 + fl*tan(50)), -(8.5 + fl*tan(36))])
-                    cube([0.01, 2*(8.5 + fl*tan(50)), 2*(8.5 + fl*tan(36))]);
+                // lower side opens at 47 deg (needs only ~35): printed upside down that face is a
+                // >45 deg overhang, a flatter one printed as a floating ledge
+                translate([-lens_min - fl, -(8.5 + fl*tan(50)), -(8.5 + fl*tan(47))])
+                    cube([0.01, 2*(8.5 + fl*tan(50)), 8.5 + fl*tan(47) + 8.5 + fl*tan(36)]);
             }
         }
         for (y=[-10, 10]) {                     // ring screws: M4 x 16 from underneath (fit legs to the ring on the bench)
