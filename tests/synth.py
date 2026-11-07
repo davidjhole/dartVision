@@ -10,7 +10,7 @@ from dartvision import board
 
 W, H_IMG = 1280, 720
 HFOV = 92.0                       # 100 deg diagonal lens on a 16:9 sensor
-CAM_R, CAM_Z = 262.0, 24.0        # lens radius from bull / height above board face (halo v4: cameras in the legs)
+CAM_R, CAM_Z = 253.0, 28.0        # lens radius from bull / height above board face (halo v4: cameras in the legs)
 
 
 def camera_matrices(angle_deg, r=CAM_R, z=CAM_Z):

@@ -50,11 +50,10 @@ The ring and segments are the same. Instead of the board-clamp legs, print:
 |---|---|---|---|---|
 | `hub.stl` | 1 | flat | none | goes between the stand's T-plate and the board (10 mm) |
 | `arm.stl` | 4 | back face down, diagonal on the bed (as saved) | none | solid bar – prints as a closed box |
-| `leg_fin.stl` | 4 | **upside down, as saved** | none | camera pod hidden under the ring + slim 18 mm fin; flat foot matches the arm tip |
-| `cam_key.stl` | 4 | flat | none | push-fit plug on top of the camera board (crush ribs); the ring sits on it |
+| `leg_fin.stl` | 4 | **upside down, as saved** | none | 44 mm pod under the ring with a flat front face + 4 camera posts, slim 18 mm fin; flat foot matches the arm tip |
 
-Print the stand parts with **3 walls, 10 % gyroid**: hub ~83 g, arms ~70 g each, fins ~56 g each –
-about 590 g for the set. Fits surrounds up to **720 mm across and 40 mm thick** (`sur_r`, `sur_t`).
+Print the stand parts with **3 walls, 10 % gyroid**: hub ~83 g, arms ~70 g each, fins ~38 g each –
+about 520 g for the set. Fits surrounds up to **720 mm across and 40 mm thick** (`sur_r`, `sur_t`).
 
 **Strength** (calculated for printed PLA, 50 N ≈ 5 kg leaning on the ring next to a fin): fins ≤ 3.6 MPa,
 arms 8.6 MPa at the hub (layer bond ~15–20 MPa), hub bolts ~460 N each; a firm 25 N sideways nudge moves the
@@ -65,12 +64,14 @@ ring ~1 mm and it springs back.
    use screws **10 mm longer** than the ones in the Winmau bag.
 2. Arms onto the **back** of the hub: 8× M4 × 30 countersunk from the front of the hub, nuts in the traps on
    the back of the arms (do this before the board goes on).
-3. Camera: plug the lead in first, then lower the whole camera **lens on** into the pod from the top, connector
-   **sideways** (the side pocket), lens towards the board centre. Lead goes down through the floor into the groove
-   under the fin. Push the `cam_key` in on top. Cameras sit rotated 90°: set `rotate: 90` for them in config.yaml.
-   The pocket takes the lens wound anywhere from 18 to 25 mm out from the board.
+3. Camera: press an **M2 heat-set insert** (M2 × 2 × 3.2) into each of the 4 posts on the fin's flat front face.
+   The camera board sits on the posts the normal way up (connector at the bottom, plug pointing down, cable
+   into the groove under the fin) and is held with 4× **M2 × 8** screws. The posts stand it 6.5 mm off the
+   face, clear of the connector and the parts on its back. No `rotate` needed in config.yaml.
+   A front cover will screw on through the same holes; it is left until the real cameras are here
+   (`cam_hood()` in the .scad is only a draft). The face leaves ~5.7 mm round the board for its walls.
 4. Fins to the ring on the bench (ring upside down): 8× M4 × 16 button head, up through the pod into the ring's
-   inserts. The ring holds the keys (and so the cameras) in place.
+   inserts. Do this before the cameras go on.
 5. Ring + fins onto the arm tips: 8× M4 × 16 from behind into the fins' inserts (2 per fin, one behind the other).
 
 **Cables:** USB + LED wires run in the groove on the hidden underside of each fin, down its inside face, out of

@@ -16,7 +16,7 @@
 // ============================================================
 
 /* [Render] */
-// assembly | seg_plain | seg_leg_a | seg_leg_b | diffuser | hub | arm | leg_fin | cam_key
+// assembly | seg_plain | seg_leg_a | seg_leg_b | diffuser | hub | arm | leg_fin
 // Cameras sit rotated 90 deg (connector sideways): set rotate: 90 for them in config.yaml
 //   (later: ebox | ebox_lid - electronics box, space reserved behind the board at 12 o'clock)
 //   (wall/board-clamp version instead of the stand mount: leg | cam_cover | pad | knob)
@@ -47,8 +47,8 @@ leg_w     = 40;
 leg_off   = 15;   // legs sit 15 deg from the 45 deg lines -> 2, 4, 8, 10 o'clock
 clamp_gap = 11;
 lip       = 8;
-cam_r     = 258;  // lens tip (at lens_len), radius from the bull
-cam_h     = 24;   // lens height above the board face
+cam_r     = 253;  // lens tip (at lens_len), radius from the bull
+cam_h     = 28;   // lens height above the board face (raised 4 mm: room for the plug below the camera)
 lens_len  = 22;   // PCB front face -> lens tip: yours winds 18..25, 22 is the middle
 lens_min = 18;  lens_max = 25;
 pcb_w     = 32.5; // camera board size
@@ -339,9 +339,9 @@ module arm() {               // arm-local: x radial from the board centre
 // ---------- sculpted stand leg ("fin") ----------
 // A camera pod tucked under the ring (hidden from the oche by the ring itself) and a slim
 // 18 mm fin that sweeps out from behind the ring, over the surround and down its outside edge.
-// The camera board drops into the pod from the top and the ring holds it in (via cam_key).
+// The camera board screws onto 4 posts on the leg's flat front face (see cam_posts).
 fin_w  = 18;   fin_rr = 3;      // fin width, edge rounding
-pod_w  = 60;   pod_r0 = cam_r - lens_max + lens_len - 6;  pod_r1 = Rout;
+pod_w  = 44;   pod_r0 = cam_r - lens_max + lens_len - 6;  pod_r1 = Rout;
 pod_z0 = legS_z0;               // pod + fin underside, just above the surround
 module fin2d() {
     sw = 31;                                              // 45 deg sweep over the outer edge (prints
@@ -441,7 +441,6 @@ module cam_slots() {
 }
 gw = 7;  gd = 8;                // cable groove (USB + LED wires), on the hidden underside of the fin
 module cable_groove() {
-    translate([P_pcb[0] + 1, -16.25 - plug - 0.35, pod_z0 - 10]) cube([7, 16.25 + plug, 10 + gd]);   // from the camera plug
     translate([P_pcb[0] + 1, -gw/2, pod_z0 - 10]) cube([post_r0 + gd - P_pcb[0] - 1, gw, 10 + gd]);  // along the underside
     translate([post_r0 - 5, -gw/2, 12]) cube([gd + 5, gw, pod_z0 + gd - 12]);              // down the inside of the fin
     translate([post_r0 - 5, -40, 12]) cube([gd + 5, 40, 8]);                               // out of the side, onto the arm
@@ -453,32 +452,79 @@ module tip_plan() {          // plan outline shared by the arm tip and the fin's
         translate([post_r1 - fin_w/2, 0]) circle(d=fin_w, $fn=48);
     }
 }
+
+// ---------- camera: leg ends in a FLAT face; the front mount (hood) carries the shape ----------
+// The leg stops at a flat face just behind the camera. 4 posts stick out of it (M2 heat-set inserts),
+// the camera board sits on them, and the hood - the whole front of the pod - goes over the camera and
+// screws through the board into the posts (4 x M2 x 8). Change the hood without reprinting the leg.
+face_x   = 285.5;               // the leg's flat front face (radius)
+post_d   = 6;   m2_insert = 3.0;  m2_clear = 2.4;  m2_head = 4.4;  boss_t = 4;
+holes4   = [for (y=[-1,1], z=[-1,1]) [y*hole_sp/2, z*hole_sp/2]];
+module pod_tucked() {
+    difference() {          // pod corners tucked in behind the ring's inner edge
+        pod_solid();
+        for (sy=[-1,1]) hull() { translate([0, sy*15, -1]) cube([Rin + 1, sy*40, 200]);
+                                 translate([0, sy*40, -1]) cube([Rin + 12, sy*1, 200]); }
+    }
+}
+module front_half(keep_front=true, gap=0) {
+    if (keep_front) translate([0, -100, -1]) cube([face_x - gap, 200, 200]);
+    else translate([face_x, -100, -1]) cube([200, 200, 200]);
+}
+module cam_posts(cut=false) {   // from the board's back out through the leg face
+    pcb_frame() for (h=holes4) translate([1.6, h[0], h[1]]) rotate([0, 90, 0])
+        if (cut) translate([0, 0, -0.01]) cylinder(d=m2_insert, h=4);
+        else cylinder(d=post_d, h=14);
+}
+module view_cut() {
+    pcb_frame() {
+        rotate([0, -90, 0]) cylinder(d=16.5, h=40);
+        hull() {                                       // 100 deg view opening, clear for any lens setting
+            fl = lens_max - lens_min + 12;
+            translate([-lens_min, -8.5, -8.5]) cube([0.01, 17, 17]);
+            translate([-lens_min - fl, -(8.5 + fl*tan(50)), -(8.5 + fl*tan(47))])
+                cube([0.01, 2*(8.5 + fl*tan(50)), 8.5 + fl*tan(47) + 8.5 + fl*tan(36)]);
+        }
+    }
+}
+// DRAFT only, not for printing yet: a front cover to finalise once the real cameras are here.
+// The leg face leaves 5.7 mm all round the board (44 mm face, 32.5 mm board) for its walls.
+module cam_hood() {               // in leg coordinates, like leg_fin()
+    difference() {
+        intersection() { pod_tucked(); front_half(true, 0.15); }
+        pcb_frame() {
+            difference() {        // board + its front parts; 4 bosses press on the corner pads
+                translate([-1.6, -16.65, -16.65]) cube([1.6 + 1.6 + 0.4, 33.3, 33.3]);
+                for (h=holes4) translate([-boss_t, h[0], h[1]]) rotate([0, 90, 0]) cylinder(d=post_d, h=boss_t);
+            }
+            translate([1.6, -16.65, -16.65]) cube([bc + 0.6, 33.3, 33.3]);          // parts on the back
+            for (h=holes4) translate([1.6, h[0], h[1]]) rotate([0, 90, 0]) cylinder(d=post_d + 0.8, h=20);  // posts
+            translate([1.6, -con_w/2 - 0.5, -16.65]) cube([20, con_w + 1, 6]);      // connector
+            translate([1.0, -5, -40]) cube([20, 10, 40 - 16.25 + 1]);               // plug + cable, straight down
+            translate([-holder_d - 0.3, -holder_w/2 - 0.3, -holder_h/2 - 0.3]) cube([holder_d + 0.4, holder_w + 0.6, holder_h + 0.6]);  // lens holder
+            for (h=holes4) translate([-50, h[0], h[1]]) rotate([0, 90, 0]) {
+                cylinder(d=m2_clear, h=51);                       // M2 x 8: head sits on the boss
+                cylinder(d=m2_head, h=50 - boss_t);               // tunnel for the screwdriver
+            }
+        }
+        view_cut();
+        cable_groove();
+    }
+}
 module leg_fin() {
     difference() {
-        intersection() {     // the fin's outer end follows the arm tip exactly (same rounded outline)
-            union() {
-                difference() {          // pod corners tucked in behind the ring's inner edge
-                    pod_solid();
-                    for (sy=[-1,1]) hull() { translate([0, sy*15, -1]) cube([Rin + 1, sy*40, 200]);
-                                             translate([0, sy*40, -1]) cube([Rin + 12, sy*1, 200]); }
+        union() {
+            intersection() {     // the fin's outer end follows the arm tip exactly (same rounded outline)
+                union() {
+                    intersection() { pod_tucked(); front_half(false); }   // flat face at the front
+                    pod_blend(); fin_solid();
+                    translate([post_r0, -fin_w/2, 0]) cube([post_t, fin_w, 14]);   // flat foot: sits square on the arm
                 }
-                pod_blend(); fin_solid();
-                translate([post_r0, -fin_w/2, 0]) cube([post_t, fin_w, 14]);   // flat foot: sits square on the arm
+                translate([0, 0, -1]) linear_extrude(200) tip_plan();
             }
-            translate([0, 0, -1]) linear_extrude(200) tip_plan();
+            intersection() { cam_posts(); translate([0, -50, pod_z0]) cube([400, 100, zb - 0.2 - pod_z0]); }
         }
-        cam_slots();
-        pcb_frame() {
-            rotate([0, -90, 0]) cylinder(d=15.5, h=40);
-            hull() {                                       // 100 deg view opening, clear for any lens setting:
-                fl = lens_max - lens_min + 12;              // starts where the lens tip is when wound fully in
-                translate([-lens_min, -8.5, -8.5]) cube([0.01, 17, 17]);
-                // lower side opens at 47 deg (needs only ~35): printed upside down that face is a
-                // >45 deg overhang, a flatter one printed as a floating ledge
-                translate([-lens_min - fl, -(8.5 + fl*tan(50)), -(8.5 + fl*tan(47))])
-                    cube([0.01, 2*(8.5 + fl*tan(50)), 8.5 + fl*tan(47) + 8.5 + fl*tan(36)]);
-            }
-        }
+        cam_posts(cut=true);
         for (y=[-10, 10]) {                     // ring screws: M4 x 16 from underneath (fit legs to the ring on the bench)
             translate([leg_scr_r, y, zb - 9]) cylinder(d=m4_clear, h=20);
             translate([leg_scr_r, y, pod_z0 - 10]) cylinder(d=8.5, h=(zb - 9) - (pod_z0 - 10));
@@ -558,7 +604,7 @@ module ebox_lid() {      // lid-local: outer face at z = 0, lip towards +z (into
 module stand_mount() {
     color(c_leg) hub();
     // electronics box (ebox / ebox_lid) not fitted yet: its space at 12 o'clock and the 2 hub bolts are kept
-    for (a=legs) rotate(a) { color(c_leg) arm(); color(c_leg) leg_fin(); color([0.3,0.3,0.32]) cam_key(); }
+    for (a=legs) rotate(a) { color(c_leg) arm(); color(c_leg) leg_fin(); }
 }
 module surround_model() { color([0.08,0.08,0.09]) difference() { cylinder(r=355, h=40, $fn=180); translate([0,0,-1]) cylinder(r=Rb + 1, h=42, $fn=180); } }
 
@@ -605,5 +651,4 @@ if (part == "arm")       rotate(45) translate([-(lap_r0 + post_r1)/2, 0, arm_d])
 if (part == "leg_fin")   translate([0, 0, zb - 0.2]) rotate([180, 0, 0]) leg_fin();   // upside down: pod top + fin top on the bed
 if (part == "ebox")      translate([0, 0, -hub_t]) rotate([180, 0, 0]) ebox();     // floor on the bed
 if (part == "ebox_lid")  ebox_lid();
-if (part == "cam_key")   translate([0, 0, zb - 0.4]) rotate([180, 0, 0]) cam_key();
 if (part == "knob")      knob();
