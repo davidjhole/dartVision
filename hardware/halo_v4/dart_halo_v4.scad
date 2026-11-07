@@ -341,13 +341,14 @@ module arm() {               // arm-local: x radial from the board centre
 // 18 mm fin that sweeps out from behind the ring, over the surround and down its outside edge.
 // The camera board screws onto 4 posts on the leg's flat front face (see cam_posts).
 fin_w  = 18;   fin_rr = 3;      // fin width, edge rounding
+ring_lift = 4;  zbl = zb + ring_lift;   // stand mount: ring sits 4 mm further out, room for a camera cover above the posts
 pod_w  = 44;   pod_r0 = cam_r - lens_max + lens_len - 6;  pod_r1 = Rout;
 pod_z0 = legS_z0;               // pod + fin underside, just above the surround
 module fin2d() {
     sw = 31;                                              // 45 deg sweep over the outer edge (prints
     offset(r=10) offset(delta=-10) polygon([              //  upside-down without supports)
-        [pod_r1 - 8,  pod_z0], [pod_r1 - 8, zb - 0.2], [post_r1 - sw, zb - 0.2],
-        [post_r1, zb - 0.2 - sw],
+        [pod_r1 - 8,  pod_z0], [pod_r1 - 8, zbl - 0.2], [post_r1 - sw, zbl - 0.2],
+        [post_r1, zbl - 0.2 - sw],
         [post_r1, 0], [post_r0, 0], [post_r0, pod_z0 - 4], [post_r0 - 4, pod_z0]]);
 }
 module fin_solid() {
@@ -356,7 +357,7 @@ module fin_solid() {
             rotate([90,0,0]) linear_extrude(fin_w - 2*fin_rr, center=true) offset(delta=-fin_rr) fin2d();
             sphere(r=fin_rr, $fn=12);
         }
-        translate([0, -50, 0]) cube([500, 100, zb - 0.2]);
+        translate([0, -50, 0]) cube([500, 100, zbl - 0.2]);
     }
 }
 module pod_solid() {
@@ -368,8 +369,8 @@ module pod_solid() {
         // flat top under the ring's back face, 45 deg away under the LED face (no shadow, prints clean)
         // 45 deg all the way down at the front (was a flat shelf, which printed upside down was a
         // floating ledge once the pod got longer for the real lens)
-        rotate([90,0,0]) linear_extrude(100, center=true) polygon([[200, 0], [400, 0], [400, zb - 0.2],
-            [Rin + bev_run, zb - 0.2], [Rin + bev_run - (zb - 0.2), 0]]);
+        rotate([90,0,0]) linear_extrude(100, center=true) polygon([[200, 0], [400, 0], [400, zbl - 0.2],
+            [Rin + bev_run, zbl - 0.2], [Rin + bev_run - (zbl - 0.2), 0]]);
     }
 }
 // slice of a rounded bar: at radius r, width w, from z0 to z1, corner radius cr
@@ -385,7 +386,7 @@ module pod_blend() {                 // pod (44 wide) flows into the fin (18 wid
     n = 24;  r0 = pod_r1 - 12;  r1 = pod_r1 + 38;
     for (i=[0:n-1]) hull() for (k=[i, i+1]) {
         t = k / n;
-        rslice(r0 + (r1 - r0)*t, blend_w(t, pod_w - 0.6, fin_true_w), pod_z0 + 0.3, zb - 0.2, 3 + 5*(1 - t));
+        rslice(r0 + (r1 - r0)*t, blend_w(t, pod_w - 0.6, fin_true_w), pod_z0 + 0.3, zbl - 0.2, 3 + 5*(1 - t));
     }
 }
 module foot() {
@@ -522,12 +523,12 @@ module leg_fin() {
                 }
                 translate([0, 0, -1]) linear_extrude(200) tip_plan();
             }
-            intersection() { cam_posts(); translate([0, -50, pod_z0]) cube([400, 100, zb - 0.2 - pod_z0]); }
+            intersection() { cam_posts(); translate([0, -50, pod_z0]) cube([400, 100, zbl - 0.2 - pod_z0]); }
         }
         cam_posts(cut=true);
         for (y=[-10, 10]) {                     // ring screws: M4 x 16 from underneath (fit legs to the ring on the bench)
-            translate([leg_scr_r, y, zb - 9]) cylinder(d=m4_clear, h=20);
-            translate([leg_scr_r, y, pod_z0 - 10]) cylinder(d=8.5, h=(zb - 9) - (pod_z0 - 10));
+            translate([leg_scr_r, y, zbl - 9]) cylinder(d=m4_clear, h=20);
+            translate([leg_scr_r, y, pod_z0 - 10]) cylinder(d=8.5, h=(zbl - 9) - (pod_z0 - 10));
         }
         translate([leg_scr_r, 0, pod_z0 - 5]) cylinder(d=6, h=50);     // LED wires down from the ring
         cable_groove();
@@ -628,10 +629,11 @@ mount = "stand";    // stand | clamp
 module assembly(show_board=true, show_surround=true) {
     if (show_board) board_model();
     if (show_surround && mount == "stand") surround_model();
-    for (i=[0:segments-1]) rotate(i*seg_a) color(c_halo) segment(seg_leg_s(i));
+    lift = (mount == "stand") ? ring_lift : 0;
+    translate([0, 0, lift]) for (i=[0:segments-1]) rotate(i*seg_a) color(c_halo) segment(seg_leg_s(i));
     if (mount == "stand") stand_mount();
     else for (a=legs) rotate(a) { color(c_leg) leg(); color(c_leg) cam_cover(); }
-    for (i=[0:segments-1]) rotate(i*seg_a + seg_a/2) color(c_diff) diffuser();
+    translate([0, 0, lift]) for (i=[0:segments-1]) rotate(i*seg_a + seg_a/2) color(c_diff) diffuser();
 }
 module front_down() { translate([0,0,zf]) rotate([180,0,0]) children(); }
 module side_down()  { rotate([90,0,0]) children(); }
@@ -648,7 +650,7 @@ if (part == "pad")       pad();
 // stand mount parts
 if (part == "hub")       translate([0, 0, hub_t]) hub();                       // flat, back face down
 if (part == "arm")       rotate(45) translate([-(lap_r0 + post_r1)/2, 0, arm_d]) arm();   // back face down, diagonal on the bed
-if (part == "leg_fin")   translate([0, 0, zb - 0.2]) rotate([180, 0, 0]) leg_fin();   // upside down: pod top + fin top on the bed
+if (part == "leg_fin")   translate([0, 0, zbl - 0.2]) rotate([180, 0, 0]) leg_fin();   // upside down: pod top + fin top on the bed
 if (part == "ebox")      translate([0, 0, -hub_t]) rotate([180, 0, 0]) ebox();     // floor on the bed
 if (part == "ebox_lid")  ebox_lid();
 if (part == "knob")      knob();

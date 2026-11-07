@@ -69,7 +69,8 @@ ring ~1 mm and it springs back.
    into the groove under the fin) and is held with 4× **M2 × 8** screws. The posts stand it 6.5 mm off the
    face, clear of the connector and the parts on its back. No `rotate` needed in config.yaml.
    A front cover will screw on through the same holes; it is left until the real cameras are here
-   (`cam_hood()` in the .scad is only a draft). The face leaves ~5.7 mm round the board for its walls.
+   (`cam_hood()` in the .scad is only a draft). The face leaves ~5.7 mm round the board for its walls, and the legs hold the ring 4 mm further
+   from the board than the bare ring height (`ring_lift`) so there's ~4 mm above the top posts for the cover's top wall.
 4. Fins to the ring on the bench (ring upside down): 8× M4 × 16 button head, up through the pod into the ring's
    inserts. Do this before the cameras go on.
 5. Ring + fins onto the arm tips: 8× M4 × 16 from behind into the fins' inserts (2 per fin, one behind the other).
