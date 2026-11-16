@@ -530,7 +530,7 @@ module leg_fin() {
             translate([leg_scr_r, y, zbl - 9]) cylinder(d=m4_clear, h=20);
             translate([leg_scr_r, y, pod_z0 - 10]) cylinder(d=8.5, h=(zbl - 9) - (pod_z0 - 10));
         }
-        translate([leg_scr_r, 0, pod_z0 - 5]) cylinder(d=6, h=50);     // LED wires down from the ring
+        translate([leg_scr_r, 0, pod_z0 - 5]) cylinder(d=6, h=zbl - (pod_z0 - 5) + 5);     // LED wires down from the ring (right through the top)
         cable_groove();
         for (p=leg_bolts) translate([p[0], p[1], -0.01]) cylinder(d=m4_insert, h=9);   // arm bolts (M4 inserts)
     }
