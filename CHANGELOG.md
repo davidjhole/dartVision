@@ -3,6 +3,11 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- Phone / web page now updates when players or options are changed on the computer (a player added
+  in the window didn't show on the phone until something else changed).
+- Automated tests (`python -m pytest tests`) for the game rules, start menu and web remote; run in
+  GitHub Actions along with the detection and STL checks (the STL check was failing in Actions
+  because trimesh's helper packages weren't installed).
 - Web scoreboard + remote (phone / iPad / TV): menu, scores, board, tap-to-correct keypad, undo /
   miss / darts out. `play --headless` (automatic on a Pi with no screen) runs with no window.
 - No false "no picture" for the first camera while the others are still opening; macOS matmul warnings hidden.

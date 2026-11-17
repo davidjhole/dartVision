@@ -15,10 +15,24 @@ _actions = queue.Queue()
 
 
 def publish(data):
+    """Share the latest state with the page. The version goes up whenever anything in it changed.
+
+    data is copied (via JSON) before it's kept: the game loop hands over its own lists, such as the
+    player list, and changes them in place later. Keeping a reference meant the stored copy changed
+    too, so the comparison saw no difference, the version never went up and the phone never redrew
+    (adding a player on the computer didn't show on the phone).
+    """
+    snap = json.loads(json.dumps(data))
     with _lock:
-        if data != _state["data"]:
-            _state["data"] = data
+        if snap != _state["data"]:
+            _state["data"] = snap
             _state["v"] += 1
+
+
+def snapshot():
+    """What /state serves right now."""
+    with _lock:
+        return {"v": _state["v"], **_state["data"]}
 
 
 def take_actions():
@@ -56,8 +70,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/state"):
-            with _lock:
-                body = json.dumps({"v": _state["v"], **_state["data"]})
+            body = json.dumps(snapshot())
             self._send(200, body, "application/json")
         elif self.path in ("/", "/index.html"):
             self._send(200, PAGE, "text/html; charset=utf-8")
@@ -78,15 +91,29 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(400, '{"ok":false}', "application/json")
 
 
-def start(port=8080):
+server = None
+
+
+def start(port=8080, host="0.0.0.0"):
     """Start the web server in the background. Returns the address to open, or None."""
+    global server
     try:
-        srv = ThreadingHTTPServer(("0.0.0.0", port), _Handler)
+        srv = ThreadingHTTPServer((host, port), _Handler)
     except OSError as e:
         print(f"web scoreboard not started (port {port}: {e})")
         return None
+    srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    return f"http://{local_ip()}:{port}"
+    server = srv
+    return f"http://{local_ip()}:{srv.server_address[1]}"
+
+
+def stop():
+    global server
+    if server:
+        server.shutdown()
+        server.server_close()
+        server = None
 
 
 PAGE = r"""<!doctype html>
@@ -197,6 +224,7 @@ table.cr td.n{color:var(--text)} table.cr td.closed{color:var(--dim)}
 <script>
 let S={}, V=-1, kpDart=0, mult='S', hideBanner=false, lastLeg='';
 const $=id=>document.getElementById(id);
+const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function act(a){fetch('/action',{method:'POST',body:JSON.stringify(a)}).then(()=>setTimeout(poll,60))}
 function addPlayer(){const n=$('pname').value.trim(); if(n){act({type:'add_player',name:n}); $('pname').value=''}}
 $('pname').addEventListener('keydown',e=>{if(e.key==='Enter')addPlayer()});
@@ -222,12 +250,12 @@ function boardSVG(marks){const R=[6.35,15.9,99,107,162,170];let s='';
 function render(){
  const menu=S.screen==='menu';$('menu').classList.toggle('hidden',!menu);$('play').classList.toggle('hidden',menu);
  if(menu){const M=S.menu;
-  $('modes').innerHTML=M.modes.map((m,i)=>`<button class="${i==M.mode?'on':''}" onclick="act({type:'mode',i:${i}})">${m}</button>`).join('');
+  $('modes').innerHTML=M.modes.map((m,i)=>`<button class="${i==M.mode?'on':''}" onclick="act({type:'mode',i:${i}})">${esc(m)}</button>`).join('');
   $('opts').innerHTML=M.opts.map((o,i)=>`<div class="opt"><span>${o[0]}</span><span><button onclick="act({type:'opt',row:${i+1},step:-1})">&lsaquo;</button> <b>${o[1]}</b> <button onclick="act({type:'opt',row:${i+1},step:1})">&rsaquo;</button></span></div>`).join('');
-  $('players').innerHTML=M.players.map((p,i)=>`<div class="opt"><b style="color:var(--text)">${p}</b><button onclick="act({type:'remove_player',i:${i}})">remove</button></div>`).join('');
+  $('players').innerHTML=M.players.map((p,i)=>`<div class="opt"><b style="color:var(--text)">${esc(p)}</b><button onclick="act({type:'remove_player',i:${i}})">remove</button></div>`).join('');
   $('kpo').classList.add('hidden');$('bano').classList.add('hidden');return}
  const G=S.game;$('gtitle').textContent=G.title;
- $('pcards').innerHTML=G.players.map(p=>`<div class="pcard ${p.active?'on':''}"><div><div class="pname">${p.name}</div><div class="psmall">${p.small}</div>
+ $('pcards').innerHTML=G.players.map(p=>`<div class="pcard ${p.active?'on':''}"><div><div class="pname">${esc(p.name)}</div><div class="psmall">${p.small}</div>
   ${G.legs_to_win>1?'<div class="dots">'+Array.from({length:G.legs_to_win},(_,k)=>`<span class="${k<p.legs?'w':''}"></span>`).join('')+'</div>':''}</div><div class="pbig">${p.big}</div></div>`).join('');
  $('who').textContent=G.player;
  const cols=['var(--m0)','var(--m1)','var(--m2)'];
@@ -236,7 +264,7 @@ function render(){
  $('total').textContent=G.total;
  $('hint').innerHTML=G.bust?'<span class="bust">BUST - pull the darts</span>':(G.hint?`<span class="hint">${G.hint}</span>`:'');
  $('status').textContent=S.status||'';
- $('table').innerHTML=G.table?'<table class="cr">'+'<tr><td></td>'+G.players.map(p=>`<td style="font-size:15px;color:${p.active?'var(--accent)':'var(--muted)'}">${p.name}</td>`).join('')+'</tr>'+
+ $('table').innerHTML=G.table?'<table class="cr">'+'<tr><td></td>'+G.players.map(p=>`<td style="font-size:15px;color:${p.active?'var(--accent)':'var(--muted)'}">${esc(p.name)}</td>`).join('')+'</tr>'+
   G.table.map(r=>`<tr><td class="${r[2]?'closed':'n'}">${r[0]}</td>`+r[1].map(m=>`<td class="mk ${m>=3?'c':''}">${['','/','X','&#9711;'][Math.min(m,3)]}</td>`).join('')+'</tr>').join('')+'</table>':'';
  $('board').innerHTML=boardSVG(G.marks);
  const won=G.leg_winner; if(won!==lastLeg){hideBanner=false;lastLeg=won}

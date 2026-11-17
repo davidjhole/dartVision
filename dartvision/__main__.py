@@ -189,6 +189,7 @@ def cmd_play(args):
     from .cameras import open_cameras
     from .detect import ThrowTracker
     from .games import MODES
+    from .menu import Menu
     from .recorder import Recorder, set_label, accept_if_unlabelled
     from .board import parse_score
     from . import ui
@@ -223,30 +224,9 @@ def cmd_play(args):
 
     # ---- menu state
     screen = "menu"
-    players = [p for p in args.players if p != "Player 1"] or ["Player 1"]
-    names = [m[0] for m in MODES]
-    mode_i = names.index(str(args.start)) if str(args.start) in names else 0
-    LEGS = [1, 2, 3, 4, 5, 7]
-    opt = {"legs": 1, "double_out": True, "double_in": False}
+    menu = Menu(args.players, args.start, MODES)
+    players = menu.players          # the same list: the menu changes it in place
     sel_row, typing = 0, ""
-
-    def menu_opts():
-        o = [("Legs", f"first to {opt['legs']}" if opt["legs"] > 1 else "single leg")]
-        if names[mode_i] in ("301", "501", "701"):
-            o += [("Double out", "yes" if opt["double_out"] else "no"),
-                  ("Double in", "yes" if opt["double_in"] else "no")]
-        return o
-
-    def change_opt(row, step):
-        nonlocal mode_i
-        if row == 0:
-            mode_i = (mode_i + step) % len(MODES)
-        elif row == 1:
-            opt["legs"] = LEGS[(LEGS.index(opt["legs"]) + step) % len(LEGS)]
-        elif row == 2:
-            opt["double_out"] = not opt["double_out"]
-        elif row == 3:
-            opt["double_in"] = not opt["double_in"]
 
     # ---- game state
     game = None
@@ -268,7 +248,7 @@ def cmd_play(args):
 
     def start_game():
         nonlocal game, screen, status, marks, turn_recs, last, started
-        game = MODES[mode_i][1](players, opt)
+        game = menu.new_game()
         screen, status, marks, turn_recs, last = "play", f"{game.player} to throw", [], [], {}
         started = time.strftime("%Y-%m-%d %H:%M:%S")
         tracker.reset(grab(cams))
@@ -335,24 +315,10 @@ def cmd_play(args):
 
     def act(a):
         """One user action, from a key, a click or the web page."""
-        nonlocal screen, mode_i, status, marks, last, show_cams, typing
+        nonlocal screen, status, marks, last, show_cams, typing
         t = a.get("type")
         if screen == "menu":
-            if t == "mode":
-                mode_i = int(a.get("i", 0)) % len(MODES)
-            elif t == "opt":
-                change_opt(int(a.get("row", 1)), int(a.get("step", 1)))
-            elif t == "add_player":
-                name = str(a.get("name", "")).strip()[:14]
-                if name and len(players) < 6:
-                    if players == ["Player 1"]:
-                        players.clear()
-                    players.append(name)
-            elif t == "remove_player":
-                i = int(a.get("i", -1))
-                if 0 <= i < len(players):
-                    players.pop(i)
-            elif t == "start" and players:
+            if menu.act(a) == "start":
                 start_game()
             return
         if t == "set_dart":
@@ -392,7 +358,7 @@ def cmd_play(args):
     def web_state():
         if screen == "menu":
             return {"screen": "menu", "status": status,
-                    "menu": {"modes": names, "mode": mode_i, "opts": menu_opts(), "players": players}}
+                    "menu": menu.web_state()}
         mk = [{"x": round(m[0], 1), "y": round(m[1], 1), "i": i} for i, m in enumerate(marks) if m]
         return {"screen": "play", "status": status, "game": {
             "title": getattr(game, "mode_title", game.name) +
@@ -457,7 +423,7 @@ def cmd_play(args):
             continue
         W, H = ui.window_size(WIN)
         if screen == "menu":
-            out, hits = ui.draw_menu(W, H, MODES, sel_row, mode_i, menu_opts(), players, typing)
+            out, hits = ui.draw_menu(W, H, MODES, sel_row, menu.mode_i, menu.opts(), players, typing)
         else:
             ovs = []
             for c in cams:
@@ -497,7 +463,7 @@ def cmd_play(args):
 
         # ------------------------------------------------ menu
         if screen == "menu":
-            n_opts = len(menu_opts())
+            n_opts = len(menu.opts())
             add_row = n_opts + 1
             if hit:
                 if hit.startswith("mode"):
@@ -520,10 +486,10 @@ def cmd_play(args):
                 sel_row = min(add_row, sel_row + 1)
             elif k in ("left", "right"):
                 if sel_row <= n_opts:
-                    change_opt(sel_row, -1 if k == "left" else 1)
+                    menu.change_opt(sel_row, -1 if k == "left" else 1)
             elif k == "enter":
                 if typing.strip():
-                    players.append(typing.strip()[:14]); typing = ""
+                    menu.add_player(typing); typing = ""
                 elif players:
                     start_game()
             elif k == "back":
@@ -531,10 +497,7 @@ def cmd_play(args):
                     typing = typing[:-1]
                 elif players:
                     players.pop()
-            elif len(k) == 1 and (k.isalnum() or k in " -'") and len(players) < 6:
-                if not typing:
-                    if "Player 1" in players and len(players) == 1:
-                        players.clear()
+            elif len(k) == 1 and (k.isalnum() or k in " -'") and menu.can_add():
                 sel_row = add_row
                 typing = (typing + k)[:14]
                 typing = typing[:1].upper() + typing[1:]

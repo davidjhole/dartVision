@@ -40,7 +40,7 @@ def calibrate_all():
     return cals
 
 
-def test_detection(n_darts=150, seed=3):
+def run_detection(n_darts=150, seed=3):
     rng = np.random.default_rng(seed)
     cals = calibrate_all()
     det = DEFAULT["detection"]
@@ -129,7 +129,7 @@ def test_tracker():
 if __name__ == "__main__":
     test_scoring()
     test_tracker()
-    acc = test_detection(int(os.environ.get("DV_DARTS", 150)))
+    acc = run_detection(int(os.environ.get("DV_DARTS", 150)))
     floor = float(os.environ.get("DV_MIN_ACCURACY", 0))
     if acc < floor:
         sys.exit(f"accuracy {acc:.1%} below {floor:.0%}")

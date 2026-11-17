@@ -1,6 +1,14 @@
 name: tests
 on: [push, pull_request]
 jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install opencv-python-headless numpy pyyaml pytest
+      - run: python -m pytest tests -v
   synthetic:
     runs-on: ubuntu-latest
     steps:
@@ -16,5 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.11"}
-      - run: pip install trimesh shapely numpy
+      # trimesh's optional helpers: split() needs networkx or scipy, section() needs scipy +
+      # networkx, the polygon tree needs rtree. Without them the check crashed before testing anything.
+      - run: pip install trimesh shapely numpy scipy networkx rtree
       - run: python tests/check_stls.py
