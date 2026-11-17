@@ -91,6 +91,7 @@ def cmd_preview(args):
     cfg = load_config(args.config)
     cams = open_cameras(cfg, config_path=args.config)
     cals = {c.name: load_calibration(c.name) for c in cams}
+    cv2.namedWindow("dartvision preview", cv2.WINDOW_NORMAL)
     show = True
     t0, n = time.time(), 0
     rate = {c.name: (time.time(), c.count, 0.0) for c in cams}   # real frames per second from each camera
@@ -117,7 +118,8 @@ def cmd_preview(args):
         labels = [label(c) for c in cams]
         view = tile([frames[c.name] for c in cams], ovs, labels)
         cv2.putText(view, "G toggle overlay   Q quit", (8, view.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, WHITE, 1)
-        cv2.imshow("dartvision preview", view)
+        from . import ui
+        cv2.imshow("dartvision preview", ui.fit(view, *ui.window_size("dartvision preview", (view.shape[1], view.shape[0]))))
         k = cv2.waitKey(1) & 0xFF
         if k in (ord("q"), 27):
             break
@@ -211,6 +213,11 @@ def cmd_play(args):
     turn_recs = []          # recording folder for each dart in the current turn (None = typed in)
     pending_unknown = None  # recording of a throw we couldn't read, waiting for C
     entry = None            # text being typed into the on-screen box (None = box closed)
+    marks = []              # (x, y, label) of this turn's darts, for the board picture
+    from . import ui
+    from .game import checkout_hint
+    cv2.namedWindow("dartvision", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("dartvision", 1600, 900)
     entry_title = ""
 
     def apply_entry(txt):
@@ -227,6 +234,8 @@ def cmd_play(args):
             game.correct_last(lab, pts)
             if turn_recs and turn_recs[-1]:
                 set_label(turn_recs[-1], lab, "corrected")
+            if marks:
+                marks[-1] = (marks[-1][0], marks[-1][1], lab)
         status = f"corrected to {lab}"
         print(f"[{game.player}] {status}")
 
@@ -252,6 +261,7 @@ def cmd_play(args):
                     status = f"extra dart seen ({ev['label']}) - ignored"
                 else:
                     turn_recs.append(saved)
+                    marks.append((ev["pos_mm"][0], ev["pos_mm"][1], ev["label"]))
                 last = {n: r for n, r in ev["cams"].items() if r.get("ok")}
                 print(f"[{game.player}] {status}")
             elif ev["type"] == "TAKEOUT":
@@ -260,6 +270,7 @@ def cmd_play(args):
                     game.next_player()
                 status = f"darts pulled - {game.player} to throw"
                 last = {}
+                marks = []
                 print(status)
             elif ev["type"] == "UNKNOWN":
                 pending_unknown = saved
@@ -280,9 +291,11 @@ def cmd_play(args):
                     x, y = r["tip_px"]
                     cv2.circle(img, (int(x * sx), int(y * sy)), 6, RED, 2, cv2.LINE_AA)
             ovs.append(ov)
-        view = tile([frames[c.name] for c in cams], ovs, [c.name for c in cams])
-        sb = _draw_scoreboard(game, last, status, h=view.shape[0])
-        out = np.hstack([view, sb])
+        W, H = ui.window_size("dartvision")
+        note = f"Update {UPDATE['latest']} available (installs on quit)" if UPDATE.get("latest") else None
+        hint = checkout_hint(game.scores[game.player]) if not game.bust else None
+        out = ui.draw_play(W, H, game, [frames[c.name] for c in cams], [c.name for c in cams], ovs,
+                           status, marks, hint, note)
         if entry is not None:
             _draw_entry_box(out, entry_title, entry)
         cv2.imshow("dartvision", out)
@@ -308,11 +321,14 @@ def cmd_play(args):
                 if d:
                     set_label(d, "FALSE", "undone")      # remember it as a false detection
             game.undo(); status = "undid last dart"
+            if marks:
+                marks.pop()
         if k == ord("m"):
             game.add_dart("MISS", 0); turn_recs.append(None); status = "miss added"
         if k == ord("n"):
             end_turn()
             game.next_player(); tracker.reset(grab(cams)); status = f"{game.player} to throw"
+            marks = []
         if k == ord("r"):
             tracker.reset(grab(cams)); status = "re-baselined (board must be clear of new darts)"
         if k == ord("c"):
