@@ -20,3 +20,5 @@ record_dir: recordings
 update:
   repo: davidjhole/dartVision
   check_on_start: true
+  auto: true          # play: update from GitHub on start (git installs, skipped if offline or you changed code)
+  branch: main

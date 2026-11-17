@@ -94,6 +94,20 @@ no need to throw again. This is how we'll tune it.
 
 ## 6. Updates
 
+**Automatic, on `play` (git installs).** Before the cameras open, `play` fetches `main` from GitHub.
+If there's anything new it fast-forwards, installs packages if `requirements.txt` changed, and
+restarts itself on the new code - no keyboard needed, so it works on a Pi with no screen.
+It's careful:
+- offline or GitHub slow (a few seconds): starts the version that's there
+- your own code changes, another branch, or local commits: leaves it alone and says why
+- only at start-up, never in the middle of a game
+- the new code is test-started first; if that fails, or it crashes before the game is running,
+  it goes back to the previous version and won't try that commit again until something newer is pushed
+  (if the previous version crashes as well, the update wasn't to blame and it's tried again next time)
+- the phone page shows "updated to ..." after an update
+
+Turn it off with `update: auto: false` in `config.yaml` (e.g. on the computer you change the code on).
+
 On start-up (`play`, `preview`, `calibrate`) dartvision quietly checks GitHub for a newer version
 (the latest release if there is one, otherwise the version number on the `main` branch).
 If there is one, the scoreboard says so and you're offered the update when you quit. Or any time:

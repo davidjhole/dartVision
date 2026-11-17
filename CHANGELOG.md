@@ -3,6 +3,10 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- Updates itself on `play` start (git installs): fetches main, fast-forwards only when it's safe
+  (no local changes, same branch, online), installs new requirements, restarts; goes back to the
+  previous version if the new one won't start. `update: auto: false` turns it off. The quit-time
+  "install?" question no longer hangs or crashes when there's no keyboard (headless).
 - Phone / web page now updates when players or options are changed on the computer (a player added
   in the window didn't show on the phone until something else changed).
 - Automated tests (`python -m pytest tests`) for the game rules, start menu and web remote; run in

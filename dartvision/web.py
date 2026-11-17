@@ -183,6 +183,7 @@ table.cr td.n{color:var(--text)} table.cr td.closed{color:var(--dim)}
 </style></head><body>
 <div id="menu" class="hidden">
   <h1>dartvision</h1>
+  <div class="status" id="mstatus"></div>
   <div class="sub">Game</div><div id="modes" class="list"></div>
   <div class="sub">Options</div><div id="opts"></div>
   <div class="sub">Players</div><div id="players"></div>
@@ -253,6 +254,7 @@ function render(){
   $('modes').innerHTML=M.modes.map((m,i)=>`<button class="${i==M.mode?'on':''}" onclick="act({type:'mode',i:${i}})">${esc(m)}</button>`).join('');
   $('opts').innerHTML=M.opts.map((o,i)=>`<div class="opt"><span>${o[0]}</span><span><button onclick="act({type:'opt',row:${i+1},step:-1})">&lsaquo;</button> <b>${o[1]}</b> <button onclick="act({type:'opt',row:${i+1},step:1})">&rsaquo;</button></span></div>`).join('');
   $('players').innerHTML=M.players.map((p,i)=>`<div class="opt"><b style="color:var(--text)">${esc(p)}</b><button onclick="act({type:'remove_player',i:${i}})">remove</button></div>`).join('');
+  $('mstatus').textContent=S.note||'';
   $('kpo').classList.add('hidden');$('bano').classList.add('hidden');return}
  const G=S.game;$('gtitle').textContent=G.title;
  $('pcards').innerHTML=G.players.map(p=>`<div class="pcard ${p.active?'on':''}"><div><div class="pname">${esc(p.name)}</div><div class="psmall">${p.small}</div>

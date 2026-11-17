@@ -25,6 +25,8 @@ DEFAULT = {
     "update": {
         "repo": "davidjhole/dartVision",  # GitHub "owner/name" to check for new releases
         "check_on_start": True,
+        "auto": True,          # play: fetch main on start, fast-forward if clean, restart (git installs)
+        "branch": "main",
     },
 }
 

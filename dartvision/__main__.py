@@ -358,7 +358,7 @@ def cmd_play(args):
     def web_state():
         if screen == "menu":
             return {"screen": "menu", "status": status,
-                    "menu": menu.web_state()}
+                    "menu": menu.web_state(), "note": UPDATE.get("note", "")}
         mk = [{"x": round(m[0], 1), "y": round(m[1], 1), "i": i} for i, m in enumerate(marks) if m]
         return {"screen": "play", "status": status, "game": {
             "title": getattr(game, "mode_title", game.name) +
@@ -380,6 +380,7 @@ def cmd_play(args):
     if headless:
         print("Running without a screen - use the web page. Ctrl+C to stop.")
 
+    running = False
     while True:
         if url:
             for a in web.take_actions():
@@ -418,6 +419,11 @@ def cmd_play(args):
 
         if url:
             web.publish(web_state())
+        if not running:
+            running = True
+            if cfg["update"].get("auto"):
+                from . import autoupdate
+                autoupdate.started_ok()          # made it into the game loop: keep this version
         if headless:
             time.sleep(0.005)
             continue
@@ -438,7 +444,7 @@ def cmd_play(args):
                         x, y = r["tip_px"]
                         cv2.circle(img, (int(x * sx), int(y * sy)), 6, RED, 2, cv2.LINE_AA)
                 ovs.append(ov)
-            note = f"Update {UPDATE['latest']} available (installs on quit)" if UPDATE.get("latest") else None
+            note = f"Update {UPDATE['latest']} available (installs on quit)" if UPDATE.get("latest") else UPDATE.get("note")
             out, hits = ui.draw_play(W, H, game, [frames[c.name] for c in cams], [c.name for c in cams], ovs,
                                      status, [m for m in marks if m], show_cams, note,
                                      entry_target if entry is not None else None)
@@ -570,6 +576,9 @@ def offer_update(cfg):
     print(f"\nA new version is available: {UPDATE['latest']}  ({UPDATE.get('url')})")
     if UPDATE.get("notes"):
         print(UPDATE["notes"][:800])
+    if not sys.stdin or not sys.stdin.isatty():
+        print("(no keyboard here - run  python -m dartvision update -y  to install it)")
+        return
     if input("Install it now? [y/N] ").strip().lower() == "y":
         update.apply(UPDATE)
 
@@ -670,6 +679,22 @@ def main(argv=None):
     if args.cmd == "version":
         print(f"dartvision v{__version__}"); return
     cfg = load_config(args.config)
+    auto = args.cmd == "play" and cfg["update"].get("auto")
+    if auto:
+        from . import autoupdate
+        if os.environ.get(autoupdate.ENV_UPDATED):
+            st = autoupdate._load(autoupdate.ROOT)
+            if st.get("pending") and st.get("new"):
+                UPDATE["note"] = "updated to " + autoupdate._short(autoupdate.ROOT, st["new"])
+        print("Checking GitHub for updates ...")
+        res, msg = autoupdate.update(branch=cfg["update"].get("branch", "main"))
+        print({"updated": "Updated:", "up_to_date": "Up to date:", "offline": "Update check skipped (offline):",
+               "skipped": "Not updating:", "rolled_back": "Update not kept:", "error": "Update check failed:"}[res], msg)
+        if res == "updated":
+            print("Restarting on the new version ...\n")
+            autoupdate.restart()
+        if res == "rolled_back":
+            UPDATE["note"] = "an update failed to start - kept the previous version"
     if args.cmd in ("play", "preview", "calibrate") and cfg["update"]["check_on_start"] and cfg["update"]["repo"]:
         from .update import check_in_background
 
@@ -677,8 +702,17 @@ def main(argv=None):
             UPDATE.update(info)
             print(f"** Update available: {info['latest']} - run  python -m dartvision update **")
         check_in_background(cfg["update"]["repo"], found)
-    {"setup": cmd_setup, "preview": cmd_preview, "calibrate": cmd_calibrate, "play": cmd_play,
-     "label": cmd_label, "replay": cmd_replay, "update": cmd_update}[args.cmd](args)
+    run = {"setup": cmd_setup, "preview": cmd_preview, "calibrate": cmd_calibrate, "play": cmd_play,
+           "label": cmd_label, "replay": cmd_replay, "update": cmd_update}[args.cmd]
+    try:
+        run(args)
+    except Exception:
+        if auto and autoupdate.crashed_after_update():
+            import traceback
+            traceback.print_exc()
+            print("Restarting on the previous version ...\n")
+            autoupdate.restart()
+        raise
 
 
 if __name__ == "__main__":
