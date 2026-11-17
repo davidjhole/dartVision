@@ -3,6 +3,9 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- Cameras that stop sending pictures (e.g. a USB hub that browns out) are now noticed and reopened
+  automatically instead of freezing silently. Preview shows each camera's real frame rate, and
+  "NO PICTURE - reconnecting" while one is stalled.
 - Halo v4 hardware: light-only ring with 45° scarf joints (no splice plates), cameras moved into the
   4 legs (2, 4, 8, 10 o'clock, 24 mm above the board face). Synthetic tests now use the v4 camera
   positions (99.3 % exact on 150 darts).

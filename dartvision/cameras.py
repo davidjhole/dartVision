@@ -42,44 +42,94 @@ def _rotate(frame, deg):
 
 
 class Camera:
-    """Grabs frames on a background thread so every camera stays current."""
+    """Grabs frames on a background thread so every camera stays current.
+
+    A watchdog notices when a camera stops sending pictures (a USB hub that browns out or
+    resets does this without any error) and reopens it, so the picture doesn't freeze for good.
+    """
+    STALL_S = 3.0          # no new frame for this long -> reopen the camera
 
     def __init__(self, name, index, width=1280, height=720, fps=30, rotate=0, exposure=None):
         self.name, self.index, self.rotate = name, index, rotate
-        self.cap = cv2.VideoCapture(index, default_backend())
-        if not self.cap.isOpened():
-            raise RuntimeError(f"camera {name} (index {index}) would not open")
-        # MJPG keeps 3-4 cameras within USB 2.0 bandwidth. Set it before the size.
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        self.cap.set(cv2.CAP_PROP_FPS, fps)
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        if exposure is not None:
-            # Manual exposure: values differ by OS/driver (Linux V4L2: 1 = manual).
-            self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1 if SYSTEM == "Linux" else 0.25)
-            self.cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
+        self._settings = (width, height, fps, exposure)
         self.frame, self.stamp, self.count = None, 0.0, 0
+        self.reconnects = 0
         self._lock = threading.Lock()
         self._run = True
-        self._t = threading.Thread(target=self._loop, daemon=True)
-        self._t.start()
+        self._gen = 0
+        self.cap = self._open()
+        if self.cap is None:
+            raise RuntimeError(f"camera {name} (index {index}) would not open")
+        self._start_reader()
         t0 = time.time()
         while self.frame is None and time.time() - t0 < 5:
             time.sleep(0.02)
         if self.frame is None:
             raise RuntimeError(f"camera {name} opened but sent no frames")
+        self._wd = threading.Thread(target=self._watchdog, daemon=True)
+        self._wd.start()
 
-    def _loop(self):
-        while self._run:
-            ok, f = self.cap.read()
+    def _open(self):
+        width, height, fps, exposure = self._settings
+        cap = cv2.VideoCapture(self.index, default_backend())
+        if not cap.isOpened():
+            cap.release()
+            return None
+        # MJPG keeps 3-4 cameras within USB 2.0 bandwidth. Set it before the size.
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        cap.set(cv2.CAP_PROP_FPS, fps)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if exposure is not None:
+            # Manual exposure: values differ by OS/driver (Linux V4L2: 1 = manual).
+            cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1 if SYSTEM == "Linux" else 0.25)
+            cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
+        return cap
+
+    def _start_reader(self):
+        self._gen += 1
+        self._t = threading.Thread(target=self._loop, args=(self._gen, self.cap), daemon=True)
+        self._t.start()
+
+    def _loop(self, gen, cap):
+        while self._run and gen == self._gen:
+            ok, f = cap.read()
             if not ok:
                 time.sleep(0.01)
                 continue
+            if gen != self._gen:
+                break
             f = _rotate(f, self.rotate)
             with self._lock:
                 self.frame, self.stamp = f, time.time()
                 self.count += 1
+
+    def _watchdog(self):
+        while self._run:
+            time.sleep(0.5)
+            if not self._run or time.time() - self.stamp < self.STALL_S:
+                continue
+            print(f"[{self.name}] no picture for {self.STALL_S:.0f} s - reopening the camera")
+            old = self.cap
+            self._gen += 1                      # the old reader stops (or is abandoned if stuck)
+            try:
+                old.release()
+            except Exception:
+                pass
+            time.sleep(0.5)
+            cap = self._open()
+            if cap is None:
+                self.stamp = time.time()        # try again after another STALL_S
+                continue
+            self.cap = cap
+            self.reconnects += 1
+            self.stamp = time.time()
+            self._start_reader()
+
+    @property
+    def stalled(self):
+        return time.time() - self.stamp > 1.5
 
     def read(self):
         with self._lock:
@@ -92,8 +142,12 @@ class Camera:
 
     def close(self):
         self._run = False
+        self._gen += 1
         self._t.join(timeout=1)
-        self.cap.release()
+        try:
+            self.cap.release()
+        except Exception:
+            pass
 
 
 def open_cameras(cfg, only=None):

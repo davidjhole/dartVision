@@ -76,6 +76,7 @@ def cmd_preview(args):
     cals = {c.name: load_calibration(c.name) for c in cams}
     show = True
     t0, n = time.time(), 0
+    rate = {c.name: (time.time(), c.count, 0.0) for c in cams}   # real frames per second from each camera
     while True:
         frames = grab(cams)
         ovs = []
@@ -84,8 +85,19 @@ def cmd_preview(args):
             ovs.append((lambda img, sx, sy, cal=cal: board.draw_board_overlay(img, scaled_H(cal["H"], sx, sy), GREEN, 1, False))
                        if (show and cal) else None)
         n += 1
-        fps = n / max(1e-6, time.time() - t0)
-        labels = [f"{c.name} (index {c.index})  {c.size[0]}x{c.size[1]}  ~{fps:.0f} fps" for c in cams]
+        now = time.time()
+        for c in cams:
+            t, k, r = rate[c.name]
+            if now - t >= 1.0:
+                rate[c.name] = (now, c.count, (c.count - k) / (now - t))
+        def label(c):
+            s = f"{c.name} (index {c.index})  {c.size[0]}x{c.size[1]}  {rate[c.name][2]:.0f} fps"
+            if c.stalled:
+                s += "  NO PICTURE - reconnecting"
+            elif c.reconnects:
+                s += f"  (reconnected {c.reconnects}x)"
+            return s
+        labels = [label(c) for c in cams]
         view = tile([frames[c.name] for c in cams], ovs, labels)
         cv2.putText(view, "G toggle overlay   Q quit", (8, view.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, WHITE, 1)
         cv2.imshow("dartvision preview", view)
