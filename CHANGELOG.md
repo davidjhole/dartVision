@@ -7,6 +7,12 @@ Newest first. The update checker shows the section for the version you're updati
   (no local changes, same branch, online), installs new requirements, restarts; goes back to the
   previous version if the new one won't start. `update: auto: false` turns it off. The quit-time
   "install?" question no longer hangs or crashes when there's no keyboard (headless).
+- Darts caller: scores are called out loud after each turn ("One hundred and eighty!", "No score",
+  "Bust", "Game shot, and the leg!", "Dave, you require 40"). Speaks on the computer (Mac `say`,
+  Linux / Pi `espeak-ng`, Windows' own voice; through a Pi's HDMI that's the TV), or on the phone /
+  iPad / TV web page: tap **Voice off** at the top right to turn it on there. `voice:` in config.yaml.
+- A 180 flashes the screen and the web page, and can flash the halo light (`lights:` in config.yaml:
+  a Pi pin driving a MOSFET with dimming, a smart plug / Wi-Fi controller URL, or any command).
 - Phone / web page now updates when players or options are changed on the computer (a player added
   in the window didn't show on the phone until something else changed).
 - Automated tests (`python -m pytest tests`) for the game rules, start menu and web remote; run in

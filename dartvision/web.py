@@ -7,11 +7,14 @@ import json
 import queue
 import socket
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _state = {"v": 0, "data": {}}
 _lock = threading.Lock()
 _actions = queue.Queue()
+_voice_seen = {"t": 0.0}     # last time a page with its voice switched on asked for the state
+VOICE_TIMEOUT = 3.0
 
 
 def publish(data):
@@ -33,6 +36,11 @@ def snapshot():
     """What /state serves right now."""
     with _lock:
         return {"v": _state["v"], **_state["data"]}
+
+
+def voice_listening():
+    """True while a phone / TV page with its voice switched on is open (it then does the talking)."""
+    return time.monotonic() - _voice_seen["t"] < VOICE_TIMEOUT
 
 
 def take_actions():
@@ -70,6 +78,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/state"):
+            if "voice=1" in self.path:
+                _voice_seen["t"] = time.monotonic()
             body = json.dumps(snapshot())
             self._send(200, body, "application/json")
         elif self.path in ("/", "/index.html"):
@@ -180,7 +190,14 @@ table.cr td.n{color:var(--text)} table.cr td.closed{color:var(--dim)}
 .banner{text-align:center}
 .banner h2{font-size:34px}
 .small{font-size:13px;color:var(--dim)}
+#vbtn{position:fixed;top:max(8px,env(safe-area-inset-top));right:10px;z-index:4;font-size:14px;padding:8px 12px;background:var(--panel)}
+#vbtn.on{background:var(--good);color:#111;font-weight:800}
+#flash{position:fixed;inset:0;z-index:9;pointer-events:none;display:flex;align-items:center;justify-content:center;
+font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid var(--accent);animation:fl .4s steps(2) infinite}
+@keyframes fl{0%{background:#ffc80055;border-color:var(--accent);color:var(--accent)}50%{background:transparent;border-color:var(--bad);color:var(--bad)}}
 </style></head><body>
+<button id="vbtn" onclick="toggleVoice()">Voice off</button>
+<div id="flash" class="hidden">180</div>
 <div id="menu" class="hidden">
   <h1>dartvision</h1>
   <div class="status" id="mstatus"></div>
@@ -223,6 +240,17 @@ table.cr td.n{color:var(--text)} table.cr td.closed{color:var(--dim)}
   <button style="margin-top:8px" onclick="hideBanner=true;render()">Close</button>
 </div></div>
 <script>
+let voiceOn=false, lastCall=null, flashT=0;
+try{voiceOn=localStorage.getItem('dv_voice')==='1'}catch(e){}
+function updV(){$('vbtn').textContent=voiceOn?'Voice on':'Voice off';$('vbtn').classList.toggle('on',voiceOn)}
+function speak(t){try{const u=new SpeechSynthesisUtterance(t);u.lang='en-GB';
+ const v=speechSynthesis.getVoices().find(v=>v.lang==='en-GB');if(v)u.voice=v;speechSynthesis.speak(u)}catch(e){}}
+function toggleVoice(){voiceOn=!voiceOn;try{localStorage.setItem('dv_voice',voiceOn?'1':'0')}catch(e){}
+ if(voiceOn)speak('Voice on');else try{speechSynthesis.cancel()}catch(e){} updV();poll()}
+function flash(){$('flash').classList.remove('hidden');clearTimeout(flashT);flashT=setTimeout(()=>$('flash').classList.add('hidden'),3000)}
+function calls(s){const c=s.calls||[],top=c.length?c[c.length-1].n:0;
+ if(lastCall===null||top<lastCall){lastCall=top;return}
+ c.filter(x=>x.n>lastCall).forEach(x=>{if(voiceOn&&s.web_voice)speak(x.text);if(x.flash)flash()});lastCall=top}
 let S={}, V=-1, kpDart=0, mult='S', hideBanner=false, lastLeg='';
 const $=id=>document.getElementById(id);
 const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -275,6 +303,7 @@ function render(){
   $('banl').textContent=G.legs_to_win>1?'legs  '+G.players.map(p=>p.name+' '+p.legs).join('  -  '):'';
   $('banb').textContent=G.match_winner?'Back to the menu':'Next leg';}
 }
-async function poll(){try{const r=await fetch('/state',{cache:'no-store'});const s=await r.json();if(s.v!==V){V=s.v;S=s;render()}}catch(e){}}
-setInterval(poll,400);poll();
+async function poll(){try{const r=await fetch('/state'+(voiceOn?'?voice=1':''),{cache:'no-store'});const s=await r.json();
+ if(s.v!==V){V=s.v;S=s;calls(s);render()}}catch(e){}}
+updV();setInterval(poll,400);poll();
 </script></body></html>"""

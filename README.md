@@ -78,6 +78,22 @@ you can set up the game, tap a dart to correct it, undo, add a miss and say the 
 On a Pi with no screen it runs like that automatically (or use `play --headless`).
 `--port 8090` changes the port, `--no-web` turns it off.
 
+### The caller (voice) and 180 flash
+After each turn the score is called out like a darts caller: "One hundred and eighty!", "No score",
+"Bust", "Dave, you require 40", "Game shot, and the leg!". It speaks on the computer running
+dartvision (on a Pi plugged into the TV with HDMI, it comes out of the TV; on a Pi / Linux install a
+voice once with `sudo apt install espeak-ng`). To hear it from a **phone, iPad or TV browser** instead,
+tap **Voice off** at the top right of the web page so it says **Voice on** (the tap is needed so the
+browser allows sound). While a page has its voice on, the computer stays quiet so you don't hear it twice.
+Choose with `voice: output:` in `config.yaml`: `auto` (that), `computer`, `web` or `both`; `enabled: false` turns it off.
+
+A **180** flashes the screen and the web page. It can flash the light too, set in `lights:` in
+`config.yaml`:
+- **Pi + MOSFET** (dimmable): `type: gpio`, `pin: 18` (the Pi pin wired to the MOSFET's input),
+  `brightness: 0.8` for the normal level. Needs `pip install gpiozero` (already on Raspberry Pi OS).
+- **Smart plug / Wi-Fi controller** (Shelly, Tasmota, WLED...): `type: http`, `on_url:` and `off_url:`.
+- **Anything else**: `type: command`, `on_cmd:` and `off_cmd:`.
+
 ## 5. Improve accuracy with your own throws
 
 Every throw is saved in `recordings/session_.../` (before/after picture from every camera),

@@ -193,6 +193,8 @@ def cmd_play(args):
     from .recorder import Recorder, set_label, accept_if_unlabelled
     from .board import parse_score
     from . import ui
+    from .caller import TurnWatcher, Speaker, phrase
+    from .lights import Lights
     cfg = load_config(args.config)
     cams = open_cameras(cfg, config_path=args.config)
     cals = {c.name: load_calibration(c.name) for c in cams}
@@ -235,6 +237,34 @@ def cmd_play(args):
     entry, entry_title, entry_target = None, "", None
     show_cams = False
     started = ""
+
+    # ---- caller (voice) and 180 flash
+    vcfg = cfg["voice"]
+    watcher = TurnWatcher()
+    speaker = Speaker(vcfg["engine"] if vcfg["enabled"] else "off")
+    vout = str(vcfg.get("output", "auto")).lower()
+    if vcfg["enabled"] and vout in ("auto", "computer", "both") and not speaker.available:
+        print("voice: no speech program found on this computer"
+              + (" (install one: sudo apt install espeak-ng)" if sys.platform.startswith("linux") else "")
+              + " - the phone / TV page can still speak")
+    lights = Lights(cfg["lights"])
+    calls, call_n, flash_at = [], 0, 0.0
+
+    def run_caller():
+        nonlocal call_n, flash_at
+        for ev in watcher.observe(game if screen == "play" else None):
+            if ev.get("flash"):
+                flash_at = time.time()
+                lights.flash()
+            if not vcfg["enabled"] or (ev["kind"] == "require" and not vcfg.get("require", True)):
+                text = ""
+            else:
+                text = phrase(ev)
+            call_n += 1
+            calls.append({"n": call_n, "text": text, "flash": bool(ev.get("flash"))})
+            del calls[:-5]
+            if text and (vout in ("computer", "both") or (vout == "auto" and not (url and web.voice_listening()))):
+                speaker.say(text)
 
     def log_result(kind, extra=None):
         try:
@@ -356,11 +386,12 @@ def cmd_play(args):
             show_cams = not show_cams
 
     def web_state():
+        common = {"calls": calls, "web_voice": bool(vcfg["enabled"]) and vout != "computer"}
         if screen == "menu":
             return {"screen": "menu", "status": status,
-                    "menu": menu.web_state(), "note": UPDATE.get("note", "")}
+                    "menu": menu.web_state(), "note": UPDATE.get("note", ""), **common}
         mk = [{"x": round(m[0], 1), "y": round(m[1], 1), "i": i} for i, m in enumerate(marks) if m]
-        return {"screen": "play", "status": status, "game": {
+        return {"screen": "play", "status": status, **common, "game": {
             "title": getattr(game, "mode_title", game.name) +
                      (f"   first to {game.legs_to_win} legs" if game.legs_to_win > 1 else ""),
             "players": [{"name": p, "big": game.card(p)[0], "small": game.card(p)[1], "legs": game.legs[p],
@@ -417,6 +448,7 @@ def cmd_play(args):
                 if entry is None and len(game.turn) < 3:
                     open_entry("pending", "Couldn't read that dart - what was it?")
 
+        run_caller()
         if url:
             web.publish(web_state())
         if not running:
@@ -458,6 +490,8 @@ def cmd_play(args):
                     ui.draw_banner(out, f"{w} wins the leg", [
                         "legs  " + "  -  ".join(f"{p} {game.legs[p]}" for p in game.players),
                         "pull the darts out or press Enter for the next leg"])
+            if time.time() - flash_at < 3.0:
+                ui.draw_flash(out, time.time() - flash_at)
             if entry is not None:
                 _draw_entry_box(out, entry_title, entry)
         cv2.imshow(WIN, out)

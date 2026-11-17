@@ -22,3 +22,14 @@ update:
   check_on_start: true
   auto: true          # play: update from GitHub on start (git installs, skipped if offline or you changed code)
   branch: main
+voice:
+  enabled: true
+  output: auto          # auto | computer | web | both  (auto: phone/TV page if its voice is on, else this computer)
+  engine: auto          # auto | say | espeak | sapi | off
+  require: true         # "Dave, you require 40"
+lights:                 # flash the halo light on a 180 (see dartvision/lights.py)
+  type: none            # none | http | command | gpio
+  # on_url: http://192.168.1.50/relay/0?turn=on
+  # off_url: http://192.168.1.50/relay/0?turn=off
+  # pin: 18             # gpio: Pi pin driving the MOSFET (PWM, dimmable)
+  # brightness: 1.0

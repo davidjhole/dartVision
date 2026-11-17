@@ -28,6 +28,15 @@ DEFAULT = {
         "auto": True,          # play: fetch main on start, fast-forward if clean, restart (git installs)
         "branch": "main",
     },
+    "voice": {
+        "enabled": True,
+        # where the caller speaks: auto = on this computer, unless a phone / TV page has its
+        # voice switched on (then only there); computer | web | both
+        "output": "auto",
+        "engine": "auto",          # auto | say (Mac) | espeak (Linux / Pi) | sapi (Windows) | off
+        "require": True,           # "you require 40" at the start of a turn on a finish
+    },
+    "lights": {"type": "none"},    # flash on a 180 - see dartvision/lights.py
 }
 
 
@@ -36,7 +45,7 @@ def load_config(path="config.yaml"):
     if os.path.exists(path):
         with open(path) as f:
             user = yaml.safe_load(f) or {}
-        nested = {k: user.pop(k, {}) or {} for k in ("detection", "update")}
+        nested = {k: user.pop(k, {}) or {} for k in ("detection", "update", "voice", "lights")}
         cfg.update(user)
         for k, v in nested.items():
             cfg[k].update(v)

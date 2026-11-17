@@ -192,3 +192,19 @@ def test_two_phones_see_the_same_thing(base):
     post(base, "/action", {"type": "add_player", "name": "J"})
     loop.tick()
     assert state(base) == state(base)
+
+
+# ------------------------------------------------------------ caller voice on the page
+def test_page_with_voice_on_takes_over_the_talking(base):
+    web._voice_seen["t"] = 0.0
+    web.publish({"screen": "menu", "calls": [{"n": 1, "text": "Bust", "flash": False}], "web_voice": True})
+    assert not web.voice_listening()
+    s = state(base)
+    assert s["calls"][0]["text"] == "Bust"
+    assert not web.voice_listening()               # a page with its voice off doesn't count
+    get(base, "/state?voice=1")
+    assert web.voice_listening()
+
+
+def test_page_has_voice_button_and_flash():
+    assert 'id="vbtn"' in web.PAGE and 'id="flash"' in web.PAGE and "speechSynthesis" in web.PAGE

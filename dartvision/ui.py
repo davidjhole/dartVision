@@ -251,6 +251,22 @@ def draw_banner(out, title, lines):
              FONT, "c")
 
 
+def draw_flash(out, t, title="180"):
+    """Flashing celebration over the game screen (a 180). t = seconds since it started."""
+    H, W = out.shape[:2]
+    u = H / 900.0
+    on = int(t / 0.2) % 2 == 0
+    col = ACCENT if on else BAD
+    if on:
+        over = out.copy()
+        cv2.rectangle(over, (0, 0), (W, H), col, -1)
+        cv2.addWeighted(over, 0.25, out, 0.75, 0, out)
+    th = max(8, int(28 * u))
+    cv2.rectangle(out, (th // 2, th // 2), (W - th // 2, H - th // 2), col, th)
+    text(out, title, (W // 2, H // 2 + int(90 * u)), fit_size(title, BOLD, 12, W * 0.6, 9 * u), col,
+         max(6, int(14 * u)), BOLD, "c")
+
+
 def draw_menu(W, H, modes, sel_row, mode_i, opts, players, typing):
     """Start screen: pick a game, options and players with the keyboard."""
     out = np.full((H, W, 3), BG, np.uint8)
