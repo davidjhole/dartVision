@@ -57,7 +57,7 @@ def test_version_goes_up_only_on_change():
     web.publish({"a": 1})
     assert web.snapshot()["v"] == 1
     web.publish({"a": 2})
-    assert web.snapshot() == {"v": 2, "a": 2}
+    assert web.snapshot() == {"v": 2, "boot": web.BOOT, "a": 2}
 
 
 def test_list_changed_in_place_still_bumps_the_version():
@@ -208,3 +208,42 @@ def test_page_with_voice_on_takes_over_the_talking(base):
 
 def test_page_has_voice_button_and_flash():
     assert 'id="vbtn"' in web.PAGE and 'id="flash"' in web.PAGE and "speechSynthesis" in web.PAGE
+
+
+def test_page_has_the_info_bar_and_log(base):
+    body = get(base, "/")[2]
+    assert b'id="info"' in body and b'id="logl"' in body and b"renderLog" in body
+
+
+def test_log_lines_reach_the_phone(base):
+    web.publish({"screen": "menu", "log": [[1, "info", "Game on"], [2, "error", "couldn't read that one"]]})
+    assert state(base)["log"][-1] == [2, "error", "couldn't read that one"]
+
+
+# -------------------------------------------------------- the computer goes away
+def test_state_carries_a_boot_id(base):
+    s = state(base)
+    assert s["boot"] == web.BOOT and len(web.BOOT) == 8
+
+
+def test_clean_quit_tells_the_phone(base):
+    import time
+    web.publish({"screen": "menu"})
+    state(base)                                   # a phone is polling
+    t = time.monotonic()
+    web.announce_stop(wait=0.3)
+    assert time.monotonic() - t >= 0.3            # waited so the phone hears it
+    assert state(base)["screen"] == "stopped"
+
+
+def test_quit_isnt_held_up_with_no_phone_open():
+    import time
+    web._last_poll["t"] = 0
+    t = time.monotonic()
+    web.announce_stop(wait=5)
+    assert time.monotonic() - t < 1 and web.snapshot()["screen"] == "stopped"
+
+
+def test_page_handles_lost_connection(base):
+    body = get(base, "/")[2]
+    assert b'id="lost"' in body and b"Lost connection" in body and b"location.reload" in body

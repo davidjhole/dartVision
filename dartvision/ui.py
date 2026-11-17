@@ -329,3 +329,56 @@ def draw_menu(W, H, modes, sel_row, mode_i, opts, players, typing):
          1.0 * u, (20, 20, 20) if ok else DIM, 2, BOLD, "c")
     hits["start"] = (x, y, W - pad, y + int(70 * u))
     return out, hits
+
+
+# ---------------------------------------------------------------- log
+LEVEL_COLS = {"info": GREY, "warn": ACCENT, "error": BAD}
+
+
+def info_bar_height(H):
+    return max(22, int(34 * H / 900.0))
+
+
+def draw_info_bar(W, h, entry, panel_open=False, now=None):
+    """Strip for the bottom of the window: the newest log line (errors stay red for a minute).
+    Click it or press Tab for the full log."""
+    import time as _t
+    out = np.full((h, W, 3), (16, 15, 14), np.uint8)
+    cv2.line(out, (0, 0), (W, 0), (60, 56, 52), 1)
+    u = h / 34.0
+    hint = "Tab: hide log" if panel_open else "Tab / click: log"
+    hw = text(out, hint, (W - int(12 * u), int(h * 0.68)), 0.45 * u, DIM, 1, FONT, "r")
+    if entry:
+        t, lv, s = entry
+        age = (now or _t.time()) - t
+        col = LEVEL_COLS[lv] if (lv == "info" or age < 60) else DIM
+        line = _t.strftime("%H:%M:%S ", _t.localtime(t)) + s
+        max_w = W - hw - int(36 * u)
+        size = 0.5 * u
+        while len(line) > 4 and cv2.getTextSize(line, FONT, size, 1)[0][0] > max_w:
+            line = line[:-2]
+        text(out, line, (int(12 * u), int(h * 0.68)), size, col, 1)
+    return out
+
+
+def draw_log_panel(out, entries, bottom=None):
+    """The last lines of the log over the lower part of the screen (newest at the bottom)."""
+    import time as _t
+    H, W = out.shape[:2]
+    bottom = bottom or H
+    u = H / 900.0
+    lh = max(14, int(24 * u))
+    ph = min(bottom - int(60 * u), int(H * 0.55))
+    y0 = bottom - ph
+    over = out.copy()
+    cv2.rectangle(over, (0, y0), (W, bottom), (12, 11, 10), -1)
+    cv2.addWeighted(over, 0.92, out, 0.08, 0, out)
+    cv2.line(out, (0, y0), (W, y0), ACCENT, max(1, int(2 * u)))
+    text(out, "Log  (also in the terminal)", (int(16 * u), y0 + int(26 * u)), 0.55 * u, GREY, 1)
+    n = max(1, (ph - int(44 * u)) // lh)
+    y = y0 + int(44 * u) + lh
+    for t, lv, s in entries[-n:]:
+        line = _t.strftime("%H:%M:%S  ", _t.localtime(t)) + s
+        text(out, line[:180], (int(16 * u), y), 0.48 * u, WHITE if lv == "info" else LEVEL_COLS[lv], 1)
+        y += lh
+    return out

@@ -3,7 +3,9 @@
 The game loop puts its state here with publish(); the page polls /state and sends taps to /action,
 which the game loop picks up with take_actions(). Standard library only.
 """
+import atexit
 import json
+import os
 import queue
 import socket
 import threading
@@ -11,6 +13,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _state = {"v": 0, "data": {}}
+BOOT = os.urandom(4).hex()          # changes every start: the page reloads itself when it sees a new one
+_last_poll = {"t": 0.0}
 _lock = threading.Lock()
 _actions = queue.Queue()
 _voice_seen = {"t": 0.0}     # last time a page with its voice switched on asked for the state
@@ -35,7 +39,18 @@ def publish(data):
 def snapshot():
     """What /state serves right now."""
     with _lock:
-        return {"v": _state["v"], **_state["data"]}
+        return {"v": _state["v"], "boot": BOOT, **_state["data"]}
+
+
+def announce_stop(wait=1.5):
+    """Tell open pages the program is closing (they show 'closed on the computer' instead of
+    waiting for scores that will never come). Waits briefly so they get it, but only if a page has
+    been polling recently, so quitting with no phone open isn't held up."""
+    with _lock:
+        _state["data"] = {"screen": "stopped"}
+        _state["v"] += 1
+    if server and time.monotonic() - _last_poll["t"] < 5:
+        time.sleep(wait)
 
 
 def voice_listening():
@@ -78,6 +93,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/state"):
+            _last_poll["t"] = time.monotonic()
             if "voice=1" in self.path:
                 _voice_seen["t"] = time.monotonic()
             body = json.dumps(snapshot())
@@ -115,6 +131,7 @@ def start(port=8080, host="0.0.0.0"):
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     server = srv
+    atexit.register(announce_stop)        # quit, Ctrl+C or a crash: pages are told it's closed
     return f"http://{local_ip()}:{srv.server_address[1]}"
 
 
@@ -183,6 +200,15 @@ table.cr td.n{color:var(--text)} table.cr td.closed{color:var(--dim)}
 .panel button{background:#3a3f45}
 .panel .mult button.on{background:var(--active)}
 @media(min-width:1200px){body{zoom:1.25}}
+body{padding-bottom:calc(52px + env(safe-area-inset-bottom))}
+#info{position:fixed;left:0;right:0;bottom:0;z-index:4;display:flex;gap:10px;align-items:center;justify-content:space-between;
+ background:#0e0f10;border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));font-size:13px;cursor:pointer}
+#infot{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+#info .lb{flex:none;background:var(--card);border-radius:8px;padding:4px 10px;color:var(--text)}
+.lv-warn{color:var(--accent)!important} .lv-error{color:var(--bad)!important}
+.logp{max-height:85vh;display:flex;flex-direction:column}
+#logl{overflow:auto;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;background:#111;border-radius:10px;padding:10px;margin:8px 0;flex:1;min-height:200px}
+#logl div{white-space:pre-wrap;word-break:break-word}
 .kp{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:10px}
 .kp button{padding:14px 0;font-weight:800;font-size:19px}
 .mult{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
@@ -239,6 +265,14 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <div class="small" style="margin-top:8px">a dart was wrong? close this and tap it</div>
   <button style="margin-top:8px" onclick="hideBanner=true;render()">Close</button>
 </div></div>
+<div id="lost" class="overlay hidden"><div class="panel banner">
+  <h2 id="lostt">Lost connection</h2><div id="lostl" class="title"></div><br>
+  <div class="small">This page reconnects by itself when dartvision is running again.</div>
+</div></div>
+<div id="info" onclick="toggleLog()"><span id="infot">connecting...</span><span class="lb">Log</span></div>
+<div id="logo" class="overlay hidden" onclick="if(event.target===this)toggleLog()"><div class="panel logp">
+  <h2>Log</h2><div class="small">what the computer printed, newest at the bottom</div><div id="logl"></div>
+  <button onclick="toggleLog()">Close</button></div></div>
 <script>
 let voiceOn=false, lastCall=null, flashT=0;
 try{voiceOn=localStorage.getItem('dv_voice')==='1'}catch(e){}
@@ -303,7 +337,29 @@ function render(){
   $('banl').textContent=G.legs_to_win>1?'legs  '+G.players.map(p=>p.name+' '+p.legs).join('  -  '):'';
   $('banb').textContent=G.match_winner?'Back to the menu':'Next leg';}
 }
-async function poll(){try{const r=await fetch('/state'+(voiceOn?'?voice=1':''),{cache:'no-store'});const s=await r.json();
- if(s.v!==V){V=s.v;S=s;calls(s);render()}}catch(e){}}
+let offline=false, logOpen=false, fails=0, boot=null, lastOk=Date.now();
+function showLost(){const stopped=S.screen==='stopped', down=fails>=3;
+ $('lost').classList.toggle('hidden',!(stopped||down));
+ $('lostt').textContent=stopped?'dartvision was closed on the computer':'Lost connection to the computer';
+ $('lostl').textContent=stopped?'':'last heard from it '+Math.round((Date.now()-lastOk)/1000)+' s ago - retrying...'}
+function hhmm(t){const d=new Date(t*1000);return d.toTimeString().slice(0,8)}
+function toggleLog(){logOpen=!logOpen;$('logo').classList.toggle('hidden',!logOpen);renderLog(true)}
+function renderLog(scroll){
+ const L=S.log||[], i=$('infot');
+ if(offline){i.textContent="can't reach the computer - is dartvision running?";i.className='lv-error'}
+ else{const e=L[L.length-1];
+  if(!e){i.textContent='no messages';i.className=''}
+  else{i.textContent=hhmm(e[0])+'  '+e[2];const fresh=Date.now()/1000-e[0]<60;i.className=e[1]!=='info'&&fresh?'lv-'+e[1]:''}}
+ if(logOpen){const box=$('logl'),end=box.scrollTop+box.clientHeight>=box.scrollHeight-20;
+  box.innerHTML=L.map(e=>`<div class="lv-${e[1]}">${hhmm(e[0])}  ${esc(e[2])}</div>`).join('')||'<div>nothing yet</div>';
+  if(scroll||end)box.scrollTop=box.scrollHeight}}
+async function poll(){try{const ac=new AbortController(),to=setTimeout(()=>ac.abort(),2500);
+ const r=await fetch('/state'+(voiceOn?'?voice=1':''),{cache:'no-store',signal:ac.signal});clearTimeout(to);const s=await r.json();
+ if(boot&&s.boot&&s.boot!==boot){location.reload();return}   // restarted (maybe updated): fresh page
+ boot=s.boot||boot;fails=0;lastOk=Date.now();
+ if(s.screen==='stopped'){S=s;V=s.v;offline=false;showLost();return}
+ const was=offline;offline=false;if(s.v!==V){V=s.v;S=s;calls(s);render();renderLog()}else if(was)renderLog()}
+ catch(e){fails++;if(fails>=3&&!offline){offline=true;renderLog()}}
+ showLost()}
 updV();setInterval(poll,400);poll();
 </script></body></html>"""

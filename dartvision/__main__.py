@@ -17,7 +17,7 @@ import time
 import cv2
 import numpy as np
 
-from . import board
+from . import board, logbuf
 from .config import load_config, save_config, load_calibration
 
 TILE_W, TILE_H = 640, 360
@@ -236,6 +236,7 @@ def cmd_play(args):
     status, pending_unknown = "", None
     entry, entry_title, entry_target = None, "", None
     show_cams = False
+    show_log = False
     started = ""
 
     # ---- caller (voice) and 180 flash
@@ -386,7 +387,7 @@ def cmd_play(args):
             show_cams = not show_cams
 
     def web_state():
-        common = {"calls": calls, "web_voice": bool(vcfg["enabled"]) and vout != "computer"}
+        common = {"log": logbuf.for_web(), "calls": calls, "web_voice": bool(vcfg["enabled"]) and vout != "computer"}
         if screen == "menu":
             return {"screen": "menu", "status": status,
                     "menu": menu.web_state(), "note": UPDATE.get("note", ""), **common}
@@ -415,7 +416,10 @@ def cmd_play(args):
     while True:
         if url:
             for a in web.take_actions():
-                act(a)
+                try:
+                    act(a)
+                except Exception as e:  # noqa - a bad tap mustn't stop the game
+                    logbuf.error(f"phone action {a.get('type')} failed", e)
         frames = grab(cams)
         ev = tracker.update(frames)
         if ev and screen == "play":
@@ -459,7 +463,9 @@ def cmd_play(args):
         if headless:
             time.sleep(0.005)
             continue
-        W, H = ui.window_size(WIN)
+        W, H_win = ui.window_size(WIN)
+        bar_h = ui.info_bar_height(H_win)
+        H = H_win - bar_h
         if screen == "menu":
             out, hits = ui.draw_menu(W, H, MODES, sel_row, menu.mode_i, menu.opts(), players, typing)
         else:
@@ -494,12 +500,21 @@ def cmd_play(args):
                 ui.draw_flash(out, time.time() - flash_at)
             if entry is not None:
                 _draw_entry_box(out, entry_title, entry)
+        if show_log:
+            ui.draw_log_panel(out, logbuf.lines())
+        out = np.vstack([out, ui.draw_info_bar(W, bar_h, logbuf.last(), show_log)])
+        hits["log"] = (0, H, W, H_win)
         cv2.imshow(WIN, out)
         k = _key(cv2.waitKeyEx(1))
         hit = _hit(hits, click["pos"])
         click["pos"] = None
         if cv2.getWindowProperty(WIN, cv2.WND_PROP_VISIBLE) < 1:
             break
+        if k == "tab" or hit == "log":
+            if k == "tab":
+                k = None
+            hit = None
+            show_log = not show_log
 
         # ------------------------------------------------ menu
         if screen == "menu":
@@ -709,6 +724,7 @@ def main(argv=None):
     s = sub.add_parser("update"); s.add_argument("-y", "--yes", action="store_true")
     sub.add_parser("version")
     args = ap.parse_args(argv)
+    logbuf.install()
     from . import __version__
     if args.cmd == "version":
         print(f"dartvision v{__version__}"); return

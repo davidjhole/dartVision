@@ -3,6 +3,13 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- Messages on screen: an info line along the bottom of the window and the phone page shows the
+  latest message (warnings yellow, errors red). Tab or a click on it (the Log button on the phone)
+  opens the full log - everything that's printed in the terminal, plus errors from background
+  threads. A phone tap that hits an error is logged instead of stopping the game.
+- Phone page knows when the computer goes away: "dartvision was closed on the computer" on a
+  normal quit / Ctrl+C, "Lost connection - retrying" if it crashes or the Wi-Fi drops. It reconnects
+  by itself and reloads when dartvision starts again (so it picks up an updated page too).
 - Updates itself on `play` start (git installs): fetches main, fast-forwards only when it's safe
   (no local changes, same branch, online), installs new requirements, restarts; goes back to the
   previous version if the new one won't start. `update: auto: false` turns it off. The quit-time
