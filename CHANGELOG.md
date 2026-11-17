@@ -3,6 +3,12 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- Detection rebuilt for low cameras (from the first real game): each camera now gives its line of
+  sight through the dart (left-right position in the picture is precise, height isn't) and the lines
+  are crossed. Darts that show as several pieces are joined up; blobs that aren't dart-shaped or don't
+  reach the board (people moving behind it) are ignored; one camera on its own no longer scores a dart.
+  On the recorded game the dart that had to be corrected to 5 now comes out as 5 by itself.
+- Correcting a dart (C) ignores stray characters, e.g. the 'c' itself landing in the terminal.
 - Cameras are remembered by their USB port (macOS: AVFoundation id, Linux: /dev/v4l/by-path), so
   renumbering no longer swaps cameras or picks up the laptop webcam. `setup` shows camera names and
   skips the computer's own camera. macOS needs `pip install -r requirements.txt` again (pyobjc).

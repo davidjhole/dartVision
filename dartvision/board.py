@@ -6,6 +6,8 @@ and y UP (towards the 20).
 import math
 
 import cv2
+import re
+
 import numpy as np
 
 # Sector numbers clockwise starting from the top.
@@ -61,6 +63,13 @@ def score_at(x, y):
 def parse_score(text):
     """'T20' -> 60, 'D16' -> 32, 'S5'/'5' -> 5, 'SB'/'25' -> 25, 'DB'/'50'/'BULL' -> 50, 'MISS'/'0' -> 0."""
     t = text.strip().upper()
+    # forgive stray characters (e.g. the 'c' key landing in the terminal too): use the last thing
+    # that looks like a score
+    found = re.findall(r"DB|SB|OB|BULL|MISS|D25|[TDS]?\d{1,2}", t)
+    if found:
+        t = found[-1]
+    elif t not in ("M", ""):
+        raise ValueError(f"not a score: {text!r}")
     if t in ("DB", "BULL", "50", "D25"):
         return "DB", 50
     if t in ("SB", "25", "OB"):

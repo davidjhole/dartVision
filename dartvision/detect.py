@@ -54,22 +54,35 @@ def _fit_axis(pts, up):
     return d, np.array([x0, y0], np.float64)
 
 
+def _sightline(tip, H_inv, step=30.0):
+    """The camera's line of sight through the tip, drawn on the board plane.
+
+    The cameras look across the board at a very low angle, so a tip's height in the
+    picture says little about how far away it is (1 px can be 10+ mm), but its left-right
+    position is very precise. The image column below the tip is the board surface between
+    the tip and the camera, so mapping it gives the line the dart must lie on. Lines from
+    two or more cameras cross at the dart."""
+    a = board.image_to_board([tip, (tip[0], tip[1] + step)], H_inv)
+    u = a[1] - a[0]
+    nu = float(np.linalg.norm(u))
+    if not np.all(np.isfinite(a)) or nu < 1e-6:
+        return None
+    return a[0].tolist(), (u / nu).tolist()
+
+
 def find_dart_tip(before, after, H_inv, board_roi, det, up=(0.0, -1.0)):
     """Find a newly arrived dart in one camera.
 
-    Returns the tip (image + board mm) AND the dart's axis projected onto the
-    board as a line. The tip always lies on that line, even when the very point
-    of the dart is hard to see, so lines from several cameras can be crossed to
-    find it (see fuse_darts).
-    before/after: prep()'d frames. H_inv: image->board homography.
-    up: image direction pointing away from the board (towards the flights).
+    Returns the tip (image + board mm) and the camera's sight line through it on the
+    board plane (see _sightline). before/after: prep()'d frames. H_inv: image->board
+    homography. up: image direction pointing away from the board (towards the flights).
     """
     thr = det["diff_threshold"]
     m = change_mask(before, after, thr, board_roi)
     n, labels, stats, _ = cv2.connectedComponentsWithStats(m, 8)
     if n <= 1:
         return {"ok": False, "reason": "no change"}
-    idx = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))     # biggest blob = the dart
+    idx = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))     # biggest blob = (part of) the dart
     area = int(stats[idx, cv2.CC_STAT_AREA])
     if area < det["min_dart_px"]:
         return {"ok": False, "reason": f"blob too small ({area}px)", "area": area}
@@ -78,13 +91,30 @@ def find_dart_tip(before, after, H_inv, board_roi, det, up=(0.0, -1.0)):
     ys, xs = np.nonzero(labels == idx)
     pts = np.stack([xs, ys], 1).astype(np.float32)
     d, c = _fit_axis(pts, up)
+    # a dart often shows as several pieces (dark flight, bright barrel, a gap where the
+    # barrel matches the board behind it): add the pieces that line up with it, refit, repeat
+    keep = {idx}
+    for _ in range(3):
+        nrm = np.array([-d[1], d[0]])
+        for j in range(1, n):
+            if j in keep or stats[j, cv2.CC_STAT_AREA] < 15:
+                continue
+            yj, xj = np.nonzero(labels == j)
+            pj = np.stack([xj, yj], 1).astype(np.float32)
+            if np.median(np.abs((pj - c) @ nrm)) < 12:
+                keep.add(j)
+        ys, xs = np.nonzero(np.isin(labels, list(keep)))
+        pts = np.stack([xs, ys], 1).astype(np.float32)
+        d, c = _fit_axis(pts, up)
+    area = len(pts)
+    nrm = np.array([-d[1], d[0]])
     proj = (pts - c) @ d
-    # refit on the half nearest the board (barrel/shaft) - flights are wide and get clipped
-    lower = pts[proj > np.percentile(proj, 40)]
+    lower = pts[proj > np.percentile(proj, 40)]               # barrel half: flights are wide
     if len(lower) > 30:
         d, c = _fit_axis(lower, up)
+        nrm = np.array([-d[1], d[0]])
     proj = (pts - c) @ d
-    perp = np.abs((pts - c) @ np.array([-d[1], d[0]]))
+    perp = np.abs((pts - c) @ nrm)
     near = perp < max(2.5, np.percentile(perp, 50))
     end_pt = c + d * proj[near].max()
     # walk on along the axis with a lower threshold: the last few mm near the
@@ -92,7 +122,6 @@ def find_dart_tip(before, after, H_inv, board_roi, det, up=(0.0, -1.0)):
     diff = colour_diff(before, after).astype(np.float32)
     h, w = diff.shape
     low, gap, tip = thr * 0.45, 0, end_pt
-    nrm = np.array([-d[1], d[0]])
     for s in range(1, 120):
         q = end_pt + d * s
         vals = [diff[int(round(y)), int(round(x))] for x, y in (q + nrm * o for o in (-2, -1, 0, 1, 2))
@@ -101,17 +130,22 @@ def find_dart_tip(before, after, H_inv, board_roi, det, up=(0.0, -1.0)):
             tip, gap = q, 0
         else:
             gap += 1
-            if gap > 4:
+            if gap > 10:                   # bridge short low-contrast stretches (barrel on cream)
                 break
-    tip_mm = board.image_to_board([tip], H_inv)[0]
-    # dart axis on the board plane: map two points of the image axis through the homography
-    a_mm = board.image_to_board([tip, tip - d * 80], H_inv)
-    u = a_mm[1] - a_mm[0]
-    nu = np.linalg.norm(u)
-    line = (tip_mm.tolist(), (u / nu).tolist()) if nu > 1e-6 else None
     length = float(proj.max() - proj.min())
-    return {"ok": True, "tip_px": tip.tolist(), "tip_mm": tip_mm.tolist(), "line_mm": line,
-            "area": area, "elongation": length / max(1.0, math.sqrt(area)), "axis": d.tolist()}
+    elong = length / max(1.0, math.sqrt(area))
+    # a dart is long and thin and its tip is on the board, not up in the room behind it
+    H = np.linalg.inv(H_inv)
+    on_board = board.board_mask(diff.shape, H, board.R_DOUBLE_OUT + 25)
+    on_board = cv2.dilate(on_board, np.ones((31, 3), np.uint8))   # tip a few px above the far edge is fine
+    ti = (int(round(tip[1])), int(round(tip[0])))
+    if not (0 <= ti[0] < h and 0 <= ti[1] < w) or not on_board[ti]:
+        return {"ok": False, "reason": "tip not on the board", "tip_px": tip.tolist(), "area": area}
+    if length < 40 or elong < 2.0:
+        return {"ok": False, "reason": f"not dart-shaped (len {length:.0f}px)", "tip_px": tip.tolist(), "area": area}
+    tip_mm = board.image_to_board([tip], H_inv)[0]
+    return {"ok": True, "tip_px": tip.tolist(), "tip_mm": tip_mm.tolist(), "line_mm": _sightline(tip, H_inv),
+            "area": area, "elongation": elong, "axis": d.tolist()}
 
 
 def fuse(points, tol_mm=12.0):
@@ -150,23 +184,34 @@ def _ls_point(lines):
 
 
 def fuse_darts(results, tol_mm=12.0, line_tol_mm=6.0):
-    """Combine per-camera results. Prefers crossing the dart-axis lines (robust to
-    a hidden or low-contrast tip); falls back to averaging tip points.
+    """Combine per-camera results by crossing their sight lines.
+
+    Every pair of cameras whose lines cross at a decent angle gives a candidate; the one
+    that the most cameras agree with (within line_tol_mm) wins and is refined with all of
+    them. With only one usable camera the tip position is used (much less accurate).
     Returns (x, y, cameras_used, method) or None."""
     good = [r for r in results if r.get("ok")]
-    tips = [r["tip_mm"] for r in good]
     lines = [tuple(map(np.asarray, r["line_mm"])) for r in good if r.get("line_mm")]
-    tip_guess = fuse(tips, tol_mm * 3)
-    cands = [x for i in range(len(lines)) for j in range(i + 1, len(lines))
-             if (x := _intersect(lines[i], lines[j])) is not None]
-    if cands:
-        c0 = np.median(np.array(cands), axis=0)
-        inl = [l for l in lines if abs(np.dot(c0 - l[0], [-l[1][1], l[1][0]])) < line_tol_mm]
+    best = None
+    for i in range(len(lines)):
+        for j in range(i + 1, len(lines)):
+            x = _intersect(lines[i], lines[j])
+            if x is None or np.hypot(*x) > board.R_BOARD + 40:
+                continue
+            inl = [l for l in lines if abs(np.dot(x - l[0], [-l[1][1], l[1][0]])) < line_tol_mm]
+            score = (len(inl), -sum(abs(np.dot(x - l[0], [-l[1][1], l[1][0]])) for l in inl))
+            if best is None or score > best[0]:
+                best = (score, x, inl)
+    if best is not None:
+        _, x, inl = best
         c = _ls_point(inl) if len(inl) >= 2 else None
-        if c is not None and (tip_guess is None or np.hypot(c[0] - tip_guess[0], c[1] - tip_guess[1]) < 60):
-            return float(c[0]), float(c[1]), len(inl), "lines"
-    if tip_guess:
-        return tip_guess[0], tip_guess[1], tip_guess[2], "tips"
+        if c is None:
+            c = x
+        return float(c[0]), float(c[1]), len(inl), "lines"
+    tips = [r["tip_mm"] for r in good]
+    t = fuse(tips, tol_mm * 3)
+    if t:
+        return t[0], t[1], t[2], "tips"
     return None
 
 
@@ -255,9 +300,14 @@ class ThrowTracker:
             if big and all(vs_empty[n] < 3 * self.det["min_dart_px"] for n in g):
                 self.empty = dict(g); self.darts_on_board = 0
                 return {"type": "TAKEOUT", "cams": per_cam}
+            if not big:
+                # something moved (someone walking past, a hand near the board) but nothing
+                # dart-shaped arrived on the board: ignore it
+                return {"type": "NOTHING", "cams": per_cam}
             return {"type": "UNKNOWN", "cams": per_cam}
         f = fuse_darts(good, self.det["fuse_tolerance_mm"])
-        if f is None:
+        if f is None or f[2] < 2:
+            # one camera alone can't place a dart reliably (it only knows the direction)
             return {"type": "UNKNOWN", "cams": per_cam}
         label, pts = board.score_at(f[0], f[1])
         self.darts_on_board += 1
