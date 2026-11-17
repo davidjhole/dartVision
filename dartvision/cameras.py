@@ -228,6 +228,9 @@ def open_cameras(cfg, only=None, config_path=None):
     if moved and config_path:
         from .config import save_config
         save_config(cfg, config_path)
+    now = time.time()
     for c in cams:
         c.peers = cams
+        # opening the others can pause a camera for a few seconds (macOS): start the stall clock now
+        c.stamp = max(c.stamp, now)
     return cams

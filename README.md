@@ -71,6 +71,13 @@ Wrong dart? **Click it** (or press **1**, **2**, **3**, or **C** for the last on
 (`T20`, `D16`, `5`, `SB`, `DB`, `MISS`). Other keys: **U** undo last dart, **M** add a miss (bounce-out),
 **R** darts are out (if it didn't notice), **N** next player, **V** show the cameras, **Q** back to the menu.
 
+### Phone / iPad / TV scoreboard (and running a Pi with no screen)
+`play` also starts a web page; the address is printed when it starts (e.g. `http://192.168.1.40:8080`).
+Open it on any phone, iPad or TV browser on the same Wi-Fi: it shows the scores and the board, and
+you can set up the game, tap a dart to correct it, undo, add a miss and say the darts are out.
+On a Pi with no screen it runs like that automatically (or use `play --headless`).
+`--port 8090` changes the port, `--no-web` turns it off.
+
 ## 5. Improve accuracy with your own throws
 
 Every throw is saved in `recordings/session_.../` (before/after picture from every camera),

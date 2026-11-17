@@ -71,6 +71,15 @@ def _sightline(tip, H_inv, step=30.0):
 
 
 def find_dart_tip(before, after, H_inv, board_roi, det, up=(0.0, -1.0)):
+    # numpy on macOS (Accelerate) prints harmless "invalid value in matmul" warnings here
+    with np.errstate(all="ignore"):
+        r = _find_dart_tip(before, after, H_inv, board_roi, det, up)
+    if r.get("ok") and not np.all(np.isfinite(r["tip_mm"])):
+        return {"ok": False, "reason": "bad fit"}
+    return r
+
+
+def _find_dart_tip(before, after, H_inv, board_roi, det, up=(0.0, -1.0)):
     """Find a newly arrived dart in one camera.
 
     Returns the tip (image + board mm) and the camera's sight line through it on the

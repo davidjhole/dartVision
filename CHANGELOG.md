@@ -3,6 +3,9 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- Web scoreboard + remote (phone / iPad / TV): menu, scores, board, tap-to-correct keypad, undo /
+  miss / darts out. `play --headless` (automatic on a Pi with no screen) runs with no window.
+- No false "no picture" for the first camera while the others are still opening; macOS matmul warnings hidden.
 - Start menu: 501 / 301 / 701 (double in / out), Cricket, Around the clock, Count up; first-to-N legs;
   players typed in the window. A won leg stops the game and shows the result; results are saved to
   recordings/results.jsonl.

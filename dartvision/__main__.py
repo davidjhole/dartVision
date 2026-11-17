@@ -208,14 +208,18 @@ def cmd_play(args):
     results_path = os.path.join(cfg["record_dir"], "results.jsonl")
 
     WIN = "dartvision"
-    cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(WIN, 1600, 900)
+    if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        args.headless = True                  # no screen attached (e.g. a Pi on its own)
+    if not args.headless:
+        cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(WIN, 1600, 900)
     click = {"pos": None}
 
     def on_mouse(event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
             click["pos"] = (x, y)
-    cv2.setMouseCallback(WIN, on_mouse)
+    if not args.headless:
+        cv2.setMouseCallback(WIN, on_mouse)
 
     # ---- menu state
     screen = "menu"
@@ -299,13 +303,17 @@ def cmd_play(args):
         entry, entry_title, entry_target = "", title, i
 
     def apply_entry(txt):
+        set_dart_label(entry_target, txt)
+
+    def set_dart_label(i, txt):
         nonlocal pending_unknown, status
         try:
             lab, pts = parse_score(txt)
         except Exception as e:  # noqa
             status = f"didn't understand '{txt}' ({e})"
             return
-        i = entry_target
+        if i != "pending" and pending_unknown and i >= len(game.turn):
+            i = "pending"
         if i == "pending" or i >= len(game.turn):       # a dart we couldn't read, or one typed in
             if game.add_dart(lab, pts) == "turn_full":
                 status = "this turn already has 3 darts"
@@ -325,7 +333,91 @@ def cmd_play(args):
             status = f"dart {i + 1} corrected to {lab}"
         print(f"[{game.player}] {status}")
 
+    def act(a):
+        """One user action, from a key, a click or the web page."""
+        nonlocal screen, mode_i, status, marks, last, show_cams, typing
+        t = a.get("type")
+        if screen == "menu":
+            if t == "mode":
+                mode_i = int(a.get("i", 0)) % len(MODES)
+            elif t == "opt":
+                change_opt(int(a.get("row", 1)), int(a.get("step", 1)))
+            elif t == "add_player":
+                name = str(a.get("name", "")).strip()[:14]
+                if name and len(players) < 6:
+                    if players == ["Player 1"]:
+                        players.clear()
+                    players.append(name)
+            elif t == "remove_player":
+                i = int(a.get("i", -1))
+                if 0 <= i < len(players):
+                    players.pop(i)
+            elif t == "start" and players:
+                start_game()
+            return
+        if t == "set_dart":
+            i = int(a.get("i", 0))
+            if 0 <= i <= len(game.turn):
+                set_dart_label(i, str(a.get("label", "")))
+        elif t == "undo":
+            if turn_recs:
+                d = turn_recs.pop()
+                if d:
+                    set_label(d, "FALSE", "undone")      # remember it as a false detection
+            if marks:
+                marks.pop()
+            game.undo(); status = "undid last dart"
+        elif t == "miss":
+            if game.add_dart("MISS", 0) != "turn_full":
+                turn_recs.append(None); marks.append(None); status = "miss added"
+        elif t in ("darts_out", "next_player"):     # darts are out but it didn't notice: end the turn
+            end_turn()
+            if game.leg_winner:
+                finish_leg()
+                return
+            if game.turn or game.bust or t == "next_player":
+                game.next_player()
+            tracker.reset(grab(cams)); marks, last = [], {}
+            status = f"{game.player} to throw"
+        elif t == "next_leg" and game.leg_winner:
+            finish_leg()
+        elif t == "menu":
+            end_turn()
+            if not game.match_winner and any(game.legs.values()):
+                log_result("unfinished")
+            screen = "menu"
+        elif t == "cams":
+            show_cams = not show_cams
+
+    def web_state():
+        if screen == "menu":
+            return {"screen": "menu", "status": status,
+                    "menu": {"modes": names, "mode": mode_i, "opts": menu_opts(), "players": players}}
+        mk = [{"x": round(m[0], 1), "y": round(m[1], 1), "i": i} for i, m in enumerate(marks) if m]
+        return {"screen": "play", "status": status, "game": {
+            "title": getattr(game, "mode_title", game.name) +
+                     (f"   first to {game.legs_to_win} legs" if game.legs_to_win > 1 else ""),
+            "players": [{"name": p, "big": game.card(p)[0], "small": game.card(p)[1], "legs": game.legs[p],
+                         "active": i == game.cur} for i, p in enumerate(game.players)],
+            "player": game.player, "turn": game.turn, "total": sum(x for _, x in game.turn),
+            "hint": game.hint(), "bust": game.bust, "leg_winner": game.leg_winner,
+            "match_winner": game.match_winner, "legs_to_win": game.legs_to_win,
+            "table": game.table(), "marks": mk}}
+
+    url = None
+    if not args.no_web:
+        from . import web
+        url = web.start(args.port)
+        if url:
+            print(f"\nScoreboard / remote: open  {url}  on a phone, iPad or TV (same Wi-Fi)\n")
+    headless = args.headless
+    if headless:
+        print("Running without a screen - use the web page. Ctrl+C to stop.")
+
     while True:
+        if url:
+            for a in web.take_actions():
+                act(a)
         frames = grab(cams)
         ev = tracker.update(frames)
         if ev and screen == "play":
@@ -358,6 +450,11 @@ def cmd_play(args):
                 if entry is None and len(game.turn) < 3:
                     open_entry("pending", "Couldn't read that dart - what was it?")
 
+        if url:
+            web.publish(web_state())
+        if headless:
+            time.sleep(0.005)
+            continue
         W, H = ui.window_size(WIN)
         if screen == "menu":
             out, hits = ui.draw_menu(W, H, MODES, sel_row, mode_i, menu_opts(), players, typing)
@@ -404,15 +501,15 @@ def cmd_play(args):
             add_row = n_opts + 1
             if hit:
                 if hit.startswith("mode"):
-                    mode_i, sel_row = int(hit[4:]), 0
+                    act({"type": "mode", "i": int(hit[4:])}); sel_row = 0
                 elif hit.startswith("opt"):
-                    sel_row = int(hit[3:]); change_opt(sel_row, 1)
+                    sel_row = int(hit[3:]); act({"type": "opt", "row": sel_row, "step": 1})
                 elif hit.startswith("del"):
-                    players.pop(int(hit[3:]))
+                    act({"type": "remove_player", "i": int(hit[3:])})
                 elif hit == "add":
                     sel_row = add_row
-                elif hit == "start" and players:
-                    start_game()
+                elif hit == "start":
+                    act({"type": "start"})
             if k is None:
                 continue
             if k == "esc" or (k == "q" and not typing):
@@ -465,13 +562,10 @@ def cmd_play(args):
         if k is None:
             continue
         if k == "q" or k == "esc":
-            end_turn()
-            if game and not game.match_winner and any(game.legs.values()):
-                log_result("unfinished")
-            screen = "menu"
+            act({"type": "menu"})
             continue
         if k == "enter" and game.leg_winner:
-            finish_leg()
+            act({"type": "next_leg"})
             continue
         if k in ("1", "2", "3"):
             j = int(k) - 1
@@ -480,28 +574,9 @@ def cmd_play(args):
         if k == "c":
             j = max(0, len(game.turn) - 1) if game.turn else 0
             open_entry(j, "Correct the last dart to:" if game.turn else "Dart 1 was:")
-        if k == "v":
-            show_cams = not show_cams
-        if k == "u":
-            if turn_recs:
-                d = turn_recs.pop()
-                if d:
-                    set_label(d, "FALSE", "undone")      # remember it as a false detection
-            if marks:
-                marks.pop()
-            game.undo(); status = "undid last dart"
-        if k == "m":
-            if game.add_dart("MISS", 0) != "turn_full":
-                turn_recs.append(None); marks.append(None); status = "miss added"
-        if k == "n" or k == "r":                  # darts are out but it didn't notice: end the turn
-            end_turn()
-            if game.leg_winner:
-                finish_leg()
-                continue
-            if game.turn or game.bust or k == "n":
-                game.next_player()
-            tracker.reset(grab(cams)); marks, last = [], {}
-            status = f"{game.player} to throw"
+        named = {"v": "cams", "u": "undo", "m": "miss", "r": "darts_out", "n": "next_player"}
+        if k in named:
+            act({"type": named[k]})
     for c in cams:
         c.close()
     cv2.destroyAllWindows()
@@ -619,7 +694,10 @@ def main(argv=None):
     sub.add_parser("preview")
     s = sub.add_parser("calibrate"); s.add_argument("--camera", help="only this camera name")
     s = sub.add_parser("play"); s.add_argument("players", nargs="*", default=["Player 1"])
-    s.add_argument("--start", type=int, default=501, help="pre-select 301 / 501 / 701 in the menu"); s.add_argument("--no-record", action="store_true")
+    s.add_argument("--start", type=int, default=501, help="pre-select 301 / 501 / 701 in the menu")
+    s.add_argument("--headless", action="store_true", help="no window: play from the web page only (Pi with no screen)")
+    s.add_argument("--port", type=int, default=8080, help="web scoreboard port")
+    s.add_argument("--no-web", action="store_true", help="don't start the web scoreboard"); s.add_argument("--no-record", action="store_true")
     s = sub.add_parser("label"); s.add_argument("session"); s.add_argument("--all", action="store_true")
     s = sub.add_parser("replay"); s.add_argument("session")
     s = sub.add_parser("update"); s.add_argument("-y", "--yes", action="store_true")
