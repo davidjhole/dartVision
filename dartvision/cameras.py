@@ -44,8 +44,8 @@ def _rotate(frame, deg):
 class Camera:
     """Grabs frames on a background thread so every camera stays current.
 
-    A watchdog notices when a camera stops sending pictures (a USB hub that browns out or
-    resets does this without any error) and reopens it, so the picture doesn't freeze for good.
+    If a camera stops sending pictures (a USB hub that browns out or resets does this without
+    any error), read() notices and reopens it, so the picture doesn't freeze for good.
     """
     STALL_S = 3.0          # no new frame for this long -> reopen the camera
 
@@ -57,6 +57,7 @@ class Camera:
         self._lock = threading.Lock()
         self._run = True
         self._gen = 0
+        self._next_try = 0.0
         self.cap = self._open()
         if self.cap is None:
             raise RuntimeError(f"camera {name} (index {index}) would not open")
@@ -66,8 +67,6 @@ class Camera:
             time.sleep(0.02)
         if self.frame is None:
             raise RuntimeError(f"camera {name} opened but sent no frames")
-        self._wd = threading.Thread(target=self._watchdog, daemon=True)
-        self._wd.start()
 
     def _open(self):
         width, height, fps, exposure = self._settings
@@ -105,33 +104,37 @@ class Camera:
                 self.frame, self.stamp = f, time.time()
                 self.count += 1
 
-    def _watchdog(self):
-        while self._run:
-            time.sleep(0.5)
-            if not self._run or time.time() - self.stamp < self.STALL_S:
-                continue
-            print(f"[{self.name}] no picture for {self.STALL_S:.0f} s - reopening the camera")
-            old = self.cap
-            self._gen += 1                      # the old reader stops (or is abandoned if stuck)
-            try:
-                old.release()
-            except Exception:
-                pass
-            time.sleep(0.5)
-            cap = self._open()
-            if cap is None:
-                self.stamp = time.time()        # try again after another STALL_S
-                continue
-            self.cap = cap
-            self.reconnects += 1
-            self.stamp = time.time()
-            self._start_reader()
+    def service(self):
+        """Reopen the camera if it has stopped sending pictures. Runs on the caller's (main)
+        thread: macOS crashes if a camera is released or opened from a background thread
+        while another thread is still reading from it."""
+        now = time.time()
+        if now - self.stamp < self.STALL_S or now < self._next_try:
+            return
+        self._next_try = now + self.STALL_S
+        print(f"[{self.name}] no picture for {self.STALL_S:.0f} s - reopening the camera")
+        self._gen += 1                          # ask the old reader thread to stop
+        self._t.join(timeout=1.0)
+        if self._t.is_alive():                  # stuck inside the driver: leave it, try again later
+            return
+        try:
+            self.cap.release()
+        except Exception:
+            pass
+        cap = self._open()
+        if cap is None:                         # unplugged / switched off: keep trying
+            return
+        self.cap = cap
+        self.reconnects += 1
+        self.stamp = time.time()
+        self._start_reader()
 
     @property
     def stalled(self):
         return time.time() - self.stamp > 1.5
 
     def read(self):
+        self.service()
         with self._lock:
             return None if self.frame is None else self.frame.copy()
 
