@@ -58,6 +58,8 @@ class Camera:
         self._run = True
         self._gen = 0
         self._next_try = 0.0
+        self._dup_warned = self._stall_warned = False
+        self.peers = []                         # the other cameras (set by open_cameras)
         self.cap = self._open()
         if self.cap is None:
             raise RuntimeError(f"camera {name} (index {index}) would not open")
@@ -112,7 +114,9 @@ class Camera:
         if now - self.stamp < self.STALL_S or now < self._next_try:
             return
         self._next_try = now + self.STALL_S
-        print(f"[{self.name}] no picture for {self.STALL_S:.0f} s - reopening the camera")
+        if not self._stall_warned:
+            print(f"[{self.name}] no picture for {self.STALL_S:.0f} s - trying to reopen it (every {self.STALL_S:.0f} s)")
+            self._stall_warned = True
         self._gen += 1                          # ask the old reader thread to stop
         self._t.join(timeout=1.0)
         if self._t.is_alive():                  # stuck inside the driver: leave it, try again later
@@ -124,10 +128,44 @@ class Camera:
         cap = self._open()
         if cap is None:                         # unplugged / switched off: keep trying
             return
+        if self._is_duplicate(cap):
+            # macOS renumbers cameras when one disappears: this index now belongs to another
+            # camera that is already open. Don't show it twice; keep trying.
+            if not self._dup_warned:
+                print(f"[{self.name}] index {self.index} is now another camera (the computer renumbered "
+                      "them). Once it's back on, restart dartvision if it doesn't return by itself.")
+                self._dup_warned = True
+            cap.release()
+            return
+        self._dup_warned = self._stall_warned = False
+        print(f"[{self.name}] picture back")
         self.cap = cap
         self.reconnects += 1
         self.stamp = time.time()
         self._start_reader()
+
+    def _is_duplicate(self, cap):
+        """True if the newly opened camera shows the same picture as another open camera."""
+        frame = None
+        t0 = time.time()
+        while frame is None and time.time() - t0 < 1.5:
+            ok, f = cap.read()
+            if ok and f is not None:
+                frame = _rotate(f, self.rotate)
+        if frame is None:
+            return False
+        def small(img):
+            return cv2.resize(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (64, 36), interpolation=cv2.INTER_AREA)
+        me = small(frame).astype("int16")
+        for p in self.peers:
+            if p is self or p.frame is None:
+                continue
+            other = p.frame
+            if other.shape != frame.shape:
+                continue
+            if abs(me - small(other).astype("int16")).mean() < 4:   # same view, just sensor noise
+                return True
+        return False
 
     @property
     def stalled(self):
@@ -162,4 +200,6 @@ def open_cameras(cfg, only=None):
                            c.get("rotate", 0), cfg.get("exposure")))
     if not cams:
         raise SystemExit("No cameras configured. Run:  python -m dartvision setup")
+    for c in cams:
+        c.peers = cams
     return cams
