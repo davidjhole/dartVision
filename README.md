@@ -30,9 +30,14 @@ Plug the cameras into **at least two different USB ports** (or a powered USB 3 h
 
 ```
 python -m dartvision setup              # finds cameras, writes config.yaml
-python -m dartvision setup --skip 0     # same, but leave out index 0 (e.g. the laptop webcam)
+python -m dartvision setup --skip 0     # same, but leave out index 0
 python -m dartvision preview            # live view of every camera
 ```
+On macOS and Linux / Raspberry Pi, `setup` shows each camera's name, leaves out the computer's own
+camera (FaceTime etc.) by itself, and remembers each camera by the **USB port** it's plugged into.
+So if the computer renumbers the cameras (after unplugging one, switching a hub port off or a
+restart) each one is still found - just keep every camera in the same port.
+A camera that stops sending pictures shows **NO PICTURE** in preview and is reopened automatically.
 Edit `config.yaml` to rename cameras or set `rotate: 180` if a camera is upside down.
 **Each camera picture must have the board at the bottom and the room above it** (dart flights point up).
 Set `exposure:` to a number once lighting is final, so the picture doesn't change brightness by itself.

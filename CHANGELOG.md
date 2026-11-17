@@ -3,6 +3,9 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- Cameras are remembered by their USB port (macOS: AVFoundation id, Linux: /dev/v4l/by-path), so
+  renumbering no longer swaps cameras or picks up the laptop webcam. `setup` shows camera names and
+  skips the computer's own camera. macOS needs `pip install -r requirements.txt` again (pyobjc).
 - Cameras that stop sending pictures (e.g. a USB hub that browns out) are now noticed and reopened
   automatically instead of freezing silently. Preview shows each camera's real frame rate, and
   "NO PICTURE - reconnecting" while one is stalled.

@@ -5,6 +5,8 @@ import time
 
 import cv2
 
+from . import devices
+
 SYSTEM = platform.system()
 
 
@@ -49,8 +51,8 @@ class Camera:
     """
     STALL_S = 3.0          # no new frame for this long -> reopen the camera
 
-    def __init__(self, name, index, width=1280, height=720, fps=30, rotate=0, exposure=None):
-        self.name, self.index, self.rotate = name, index, rotate
+    def __init__(self, name, index, width=1280, height=720, fps=30, rotate=0, exposure=None, dev_id=None):
+        self.name, self.index, self.rotate, self.dev_id = name, index, rotate, dev_id
         self._settings = (width, height, fps, exposure)
         self.frame, self.stamp, self.count = None, 0.0, 0
         self.reconnects = 0
@@ -125,6 +127,11 @@ class Camera:
             self.cap.release()
         except Exception:
             pass
+        if self.dev_id:                         # find our camera by its port, not its old number
+            idx = devices.index_for_id(self.dev_id)
+            if idx is None:                     # still switched off / unplugged
+                return
+            self.index = idx
         cap = self._open()
         if cap is None:                         # unplugged / switched off: keep trying
             return
@@ -191,15 +198,36 @@ class Camera:
             pass
 
 
-def open_cameras(cfg, only=None):
-    cams = []
+def open_cameras(cfg, only=None, config_path=None):
+    """Open the configured cameras. Cameras saved with a port id (setup on macOS / Linux) are
+    found by that id, so it doesn't matter if the computer has renumbered them."""
+    devs = devices.list_devices()
+    cams, moved = [], False
     for c in cfg["cameras"]:
         if only and c["name"] != only:
             continue
-        cams.append(Camera(c["name"], c["index"], cfg["width"], cfg["height"], cfg["fps"],
-                           c.get("rotate", 0), cfg.get("exposure")))
+        index = c["index"]
+        if c.get("id"):
+            now = devices.index_for_id(c["id"], devs)
+            if now is None:
+                print(f"[{c['name']}] not found - is it plugged in and switched on? Skipping it.")
+                continue
+            if now != index:
+                print(f"[{c['name']}] is index {now} now (was {index}) - the computer renumbered the cameras.")
+                c["index"] = index = now
+                moved = True
+        else:
+            d = devices.describe(index, devs)
+            if d and d["builtin"]:
+                print(f"[{c['name']}] index {index} is '{d['name']}', the computer's own camera. "
+                      "Run  python -m dartvision setup  again.")
+        cams.append(Camera(c["name"], index, cfg["width"], cfg["height"], cfg["fps"],
+                           c.get("rotate", 0), cfg.get("exposure"), c.get("id")))
     if not cams:
-        raise SystemExit("No cameras configured. Run:  python -m dartvision setup")
+        raise SystemExit("No cameras opened. Run:  python -m dartvision setup")
+    if moved and config_path:
+        from .config import save_config
+        save_config(cfg, config_path)
     for c in cams:
         c.peers = cams
     return cams

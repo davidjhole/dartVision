@@ -51,28 +51,45 @@ def grab(cams):
 
 # ------------------------------------------------------------------ commands
 def cmd_setup(args):
-    from .cameras import list_cameras, Camera
+    from .cameras import list_cameras
+    from . import devices
     print("Looking for cameras ...")
     found = list_cameras(args.max_index)
     if not found:
         print("No cameras found. Check USB connections (and on macOS, camera permission for your terminal).")
         return
+    devs = devices.list_devices()
+    skip = set(args.skip or [])
+    cams = []
     for f in found:
-        print(f"  index {f['index']}: {f['width']}x{f['height']}")
+        d = devices.describe(f["index"], devs) or {}
+        name = d.get("name") or "?"
+        note = ""
+        if f["index"] in skip:
+            note = "  - skipped (--skip)"
+        elif d.get("builtin") and not args.keep_builtin:
+            note = "  - skipped: the computer's own camera"
+        print(f"  index {f['index']}: {f['width']}x{f['height']}  {name}{note}")
+        if note:
+            continue
+        cam = {"name": f"cam{len(cams) + 1}", "index": f["index"], "rotate": 0}
+        if d.get("id"):
+            cam["id"] = d["id"]          # stable: tied to the USB port, survives renumbering
+            cam["model"] = name
+        cams.append(cam)
+    if found and not devs:
+        print("(camera names and port ids aren't available here - cameras are kept by number only)")
     cfg = load_config(args.config)
-    cfg["cameras"] = [{"name": f"cam{i + 1}", "index": f["index"], "rotate": 0} for i, f in enumerate(found)]
-    if args.skip:
-        cfg["cameras"] = [c for c in cfg["cameras"] if c["index"] not in args.skip]
+    cfg["cameras"] = cams
     save_config(cfg, args.config)
-    print(f"\nWrote {args.config} with {len(cfg['cameras'])} camera(s).")
-    print("Tip: laptop webcams show up too - remove them with  setup --skip <index>.")
+    print(f"\nWrote {args.config} with {len(cams)} camera(s).")
     print("Next: python -m dartvision preview")
 
 
 def cmd_preview(args):
     from .cameras import open_cameras
     cfg = load_config(args.config)
-    cams = open_cameras(cfg)
+    cams = open_cameras(cfg, config_path=args.config)
     cals = {c.name: load_calibration(c.name) for c in cams}
     show = True
     t0, n = time.time(), 0
@@ -115,7 +132,7 @@ def cmd_calibrate(args):
     from .cameras import open_cameras
     from .calibrate import calibrate_camera
     cfg = load_config(args.config)
-    cams = open_cameras(cfg, only=args.camera)
+    cams = open_cameras(cfg, only=args.camera, config_path=args.config)
     print("For each camera click: 1) the bull centre, then where the wire meets the OUTER edge of")
     print("the double ring 2) between 20 and 1, 3) between 6 and 10, 4) between 3 and 19, 5) between 11 and 14.")
     print("Use F to freeze the picture, drag points to fine tune, S to save, N for next camera.")
@@ -176,7 +193,7 @@ def cmd_play(args):
     from .recorder import Recorder, set_label, accept_if_unlabelled
     from .board import parse_score
     cfg = load_config(args.config)
-    cams = open_cameras(cfg)
+    cams = open_cameras(cfg, config_path=args.config)
     cals = {c.name: load_calibration(c.name) for c in cams}
     missing = [n for n, c in cals.items() if c is None]
     if missing:
@@ -372,6 +389,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("setup"); s.add_argument("--max-index", type=int, default=8)
     s.add_argument("--skip", type=int, nargs="*", help="camera indexes to leave out (e.g. laptop webcam)")
+    s.add_argument("--keep-builtin", action="store_true", help="keep the computer's own camera too")
     sub.add_parser("preview")
     s = sub.add_parser("calibrate"); s.add_argument("--camera", help="only this camera name")
     s = sub.add_parser("play"); s.add_argument("players", nargs="*", default=["Player 1"])
