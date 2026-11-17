@@ -112,6 +112,10 @@ What changed is listed in `CHANGELOG.md`.
 5. **Scoring** – position → segment/ring using regulation board dimensions.
 
 ## Test without hardware
+`pip install pytest` then `python -m pytest tests` runs the quick tests: game rules (x01, cricket,
+around the clock, count up, legs, corrections), the start menu, and the web scoreboard / remote
+(a real local server, including the computer and phone staying in step). They run on every push.
+
 `python tests/test_pipeline.py` renders synthetic camera views from the halo's camera positions
 and checks calibration, detection and scoring (currently ~97 % exact on 150 random darts, misses are all < 1 mm from a wire).
 

@@ -1,7 +1,7 @@
 """Printability checks for the hardware STLs:  python tests/check_stls.py
 Each part must be watertight, have no non-manifold edges, be one solid body and
 have no 'islands' (regions that start printing in mid-air) in its saved orientation.
-Needs: pip install trimesh shapely
+Needs: pip install trimesh shapely scipy networkx rtree
 """
 import collections, glob, os, sys
 import numpy as np
