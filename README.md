@@ -58,12 +58,18 @@ Redo this whenever a camera or the board moves.
 ## 4. Play
 
 ```
-python -m dartvision play Dave Sam              # 501, double out
-python -m dartvision play Dave --start 301
+python -m dartvision play
 ```
-Throw – each dart is scored automatically. Pulling the darts out moves to the next player.
-Keys: **C** correct the last dart (a box pops up: type e.g. `T20`, `D16`, `5`, `SB`, `DB`, `MISS`, Enter),
-**U** undo, **M** add a miss (bounce-out), **N** next player, **R** darts are out – end the turn and reset (if it didn't notice the darts being pulled), **Q** quit.
+A menu opens: pick the game (**501 / 301 / 701, Cricket, Around the clock, Count up**), the number of
+legs, double in / out, and type the players' names (Enter adds one). Enter starts.
+
+Throw – each dart is scored automatically and shown on the board picture. Pulling the darts out moves
+to the next player. When someone wins a leg it stops and shows the result; pull the darts out (or press
+Enter) for the next leg. Every leg and match is saved to `recordings/results.jsonl`.
+
+Wrong dart? **Click it** (or press **1**, **2**, **3**, or **C** for the last one) and type what it was
+(`T20`, `D16`, `5`, `SB`, `DB`, `MISS`). Other keys: **U** undo last dart, **M** add a miss (bounce-out),
+**R** darts are out (if it didn't notice), **N** next player, **V** show the cameras, **Q** back to the menu.
 
 ## 5. Improve accuracy with your own throws
 

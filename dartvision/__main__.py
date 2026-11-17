@@ -148,52 +148,50 @@ def cmd_calibrate(args):
             c.close()
 
 
-def _draw_scoreboard(game, last_events, status, w=420, h=720):
-    from .game import checkout_hint
-    p = np.full((h, w, 3), 25, np.uint8)
-    y = 40
-    cv2.putText(p, f"{game.start}  double out", (16, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, GREY, 1, cv2.LINE_AA)
-    y += 30
-    for i, pl in enumerate(game.players):
-        active = i == game.cur
-        col = YELLOW if active else WHITE
-        cv2.putText(p, ("> " if active else "  ") + pl, (16, y + 36), cv2.FONT_HERSHEY_SIMPLEX, 0.9, col, 2, cv2.LINE_AA)
-        cv2.putText(p, str(game.scores[pl]), (230, y + 40), cv2.FONT_HERSHEY_SIMPLEX, 1.6, col, 3, cv2.LINE_AA)
-        cv2.putText(p, f"avg {game.three_dart_avg(pl):.1f}", (36, y + 62), cv2.FONT_HERSHEY_SIMPLEX, 0.5, GREY, 1)
-        y += 80
-    y += 10
-    cv2.putText(p, "This turn:", (16, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, GREY, 1, cv2.LINE_AA)
-    for j in range(3):
-        lab = game.turn[j][0] if j < len(game.turn) else "-"
-        cv2.putText(p, lab, (16 + j * 130, y + 45), cv2.FONT_HERSHEY_SIMPLEX, 1.2, WHITE, 2, cv2.LINE_AA)
-    y += 70
-    total = sum(pt for _, pt in game.turn)
-    cv2.putText(p, f"= {total}", (16, y), cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2, cv2.LINE_AA)
-    if game.bust:
-        cv2.putText(p, "BUST - pull darts", (130, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, RED, 2, cv2.LINE_AA)
-    hint = checkout_hint(game.scores[game.player])
-    if hint and not game.bust:
-        cv2.putText(p, f"checkout: {hint}", (16, y + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, GREEN, 2, cv2.LINE_AA)
-    if game.winner:
-        cv2.putText(p, f"{game.winner} WINS!", (16, y + 90), cv2.FONT_HERSHEY_SIMPLEX, 1.4, GREEN, 3, cv2.LINE_AA)
-    y = h - 170
-    if UPDATE.get("latest"):
-        cv2.putText(p, f"Update {UPDATE['latest']} available (installs on quit)", (16, y - 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, GREEN, 1, cv2.LINE_AA)
-    cv2.putText(p, status[:40], (16, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, YELLOW, 1, cv2.LINE_AA)
-    keys = ["C correct last dart", "U undo last dart   M add miss",
-            "N next player   R darts out / reset", "Q quit"]
-    for i, t in enumerate(keys):
-        cv2.putText(p, t, (16, y + 30 + 24 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.5, GREY, 1, cv2.LINE_AA)
-    return p
+# arrow keys as cv2.waitKeyEx reports them (macOS, Linux, Windows)
+_ARROWS = {63232: "up", 63233: "down", 63234: "left", 63235: "right",
+           65362: "up", 65364: "down", 65361: "left", 65363: "right",
+           2490368: "up", 2621440: "down", 2424832: "left", 2555904: "right",
+           0: "up", 1: "down", 2: "left", 3: "right"}
+
+
+def _key(k):
+    """Name of a key from cv2.waitKeyEx: 'up', 'enter', 'esc', 'back', a single character, or None."""
+    if k == -1:
+        return None
+    if k in _ARROWS and k > 3:
+        return _ARROWS[k]
+    c = k & 0xFF
+    if c in (13, 10):
+        return "enter"
+    if c == 27:
+        return "esc"
+    if c in (8, 127):
+        return "back"
+    if c == 9:
+        return "tab"
+    if k in (0, 1, 2, 3):
+        return _ARROWS[k]
+    return chr(c) if 32 <= c < 127 else None
+
+
+def _hit(hits, pos):
+    if pos is None:
+        return None
+    for name, (x0, y0, x1, y1) in hits.items():
+        if x0 <= pos[0] <= x1 and y0 <= pos[1] <= y1:
+            return name
+    return None
 
 
 def cmd_play(args):
+    import json
     from .cameras import open_cameras
     from .detect import ThrowTracker
-    from .game import X01
+    from .games import MODES
     from .recorder import Recorder, set_label, accept_if_unlabelled
     from .board import parse_score
+    from . import ui
     cfg = load_config(args.config)
     cams = open_cameras(cfg, config_path=args.config)
     cals = {c.name: load_calibration(c.name) for c in cams}
@@ -207,37 +205,71 @@ def cmd_play(args):
     tracker = ThrowTracker(cals, cfg["detection"], {n: f.shape for n, f in frames.items()})
     tracker.reset(frames)
     rec = None if args.no_record else Recorder(cfg["record_dir"])
-    game = X01(args.players, start=args.start)
-    last = {}
-    status = "Ready - throw!"
-    turn_recs = []          # recording folder for each dart in the current turn (None = typed in)
-    pending_unknown = None  # recording of a throw we couldn't read, waiting for C
-    entry = None            # text being typed into the on-screen box (None = box closed)
-    marks = []              # (x, y, label) of this turn's darts, for the board picture
-    from . import ui
-    from .game import checkout_hint
-    cv2.namedWindow("dartvision", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("dartvision", 1600, 900)
-    entry_title = ""
+    results_path = os.path.join(cfg["record_dir"], "results.jsonl")
 
-    def apply_entry(txt):
-        nonlocal pending_unknown, status
+    WIN = "dartvision"
+    cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WIN, 1600, 900)
+    click = {"pos": None}
+
+    def on_mouse(event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            click["pos"] = (x, y)
+    cv2.setMouseCallback(WIN, on_mouse)
+
+    # ---- menu state
+    screen = "menu"
+    players = [p for p in args.players if p != "Player 1"] or ["Player 1"]
+    names = [m[0] for m in MODES]
+    mode_i = names.index(str(args.start)) if str(args.start) in names else 0
+    LEGS = [1, 2, 3, 4, 5, 7]
+    opt = {"legs": 1, "double_out": True, "double_in": False}
+    sel_row, typing = 0, ""
+
+    def menu_opts():
+        o = [("Legs", f"first to {opt['legs']}" if opt["legs"] > 1 else "single leg")]
+        if names[mode_i] in ("301", "501", "701"):
+            o += [("Double out", "yes" if opt["double_out"] else "no"),
+                  ("Double in", "yes" if opt["double_in"] else "no")]
+        return o
+
+    def change_opt(row, step):
+        nonlocal mode_i
+        if row == 0:
+            mode_i = (mode_i + step) % len(MODES)
+        elif row == 1:
+            opt["legs"] = LEGS[(LEGS.index(opt["legs"]) + step) % len(LEGS)]
+        elif row == 2:
+            opt["double_out"] = not opt["double_out"]
+        elif row == 3:
+            opt["double_in"] = not opt["double_in"]
+
+    # ---- game state
+    game = None
+    last, marks, turn_recs = {}, [], []
+    status, pending_unknown = "", None
+    entry, entry_title, entry_target = None, "", None
+    show_cams = False
+    started = ""
+
+    def log_result(kind, extra=None):
         try:
-            lab, pts = parse_score(txt)
+            os.makedirs(cfg["record_dir"], exist_ok=True)
+            row = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "kind": kind, "started": started,
+                   "mode": getattr(game, "mode_title", game.name), **game.summary(), **(extra or {})}
+            with open(results_path, "a") as f:
+                f.write(json.dumps(row) + "\n")
         except Exception as e:  # noqa
-            status = f"didn't understand '{txt}' ({e})"
-            return
-        if pending_unknown:                       # a throw we couldn't read
-            game.add_dart(lab, pts); turn_recs.append(pending_unknown)
-            set_label(pending_unknown, lab, "entered"); pending_unknown = None
-        else:
-            game.correct_last(lab, pts)
-            if turn_recs and turn_recs[-1]:
-                set_label(turn_recs[-1], lab, "corrected")
-            if marks:
-                marks[-1] = (marks[-1][0], marks[-1][1], lab)
-        status = f"corrected to {lab}"
-        print(f"[{game.player}] {status}")
+            print("couldn't save the result:", e)
+
+    def start_game():
+        nonlocal game, screen, status, marks, turn_recs, last, started
+        game = MODES[mode_i][1](players, opt)
+        screen, status, marks, turn_recs, last = "play", f"{game.player} to throw", [], [], {}
+        started = time.strftime("%Y-%m-%d %H:%M:%S")
+        tracker.reset(grab(cams))
+        print(f"Game on: {getattr(game, 'mode_title', game.name)} - {', '.join(players)}"
+              + (f"   recording to {rec.dir}" if rec else ""))
 
     def end_turn():
         nonlocal turn_recs
@@ -246,20 +278,68 @@ def cmd_play(args):
                 accept_if_unlabelled(d)      # not corrected = it was right
         turn_recs = []
 
-    print(f"Game on: {', '.join(args.players)}  ({args.start})" + (f"   recording to {rec.dir}" if rec else ""))
+    def finish_leg():
+        """Leg won and acknowledged (Enter / darts pulled): next leg, or back to the menu."""
+        nonlocal screen, marks, last, status
+        end_turn()
+        if game.match_winner:
+            log_result("match")
+            print(f"{game.match_winner} wins the match")
+            screen = "menu"
+        else:
+            w = game.leg_winner
+            game.next_leg()
+            log_result("leg", {"leg_winner": w})
+            status = f"next leg - {game.player} to throw"
+        marks, last = [], {}
+        tracker.reset(grab(cams))
+
+    def open_entry(i, title):
+        nonlocal entry, entry_title, entry_target
+        entry, entry_title, entry_target = "", title, i
+
+    def apply_entry(txt):
+        nonlocal pending_unknown, status
+        try:
+            lab, pts = parse_score(txt)
+        except Exception as e:  # noqa
+            status = f"didn't understand '{txt}' ({e})"
+            return
+        i = entry_target
+        if i == "pending" or i >= len(game.turn):       # a dart we couldn't read, or one typed in
+            if game.add_dart(lab, pts) == "turn_full":
+                status = "this turn already has 3 darts"
+                return
+            d = pending_unknown if i == "pending" else None
+            turn_recs.append(d); marks.append(None)
+            if d:
+                set_label(d, lab, "entered")
+            pending_unknown = None
+            status = f"entered {lab}"
+        else:
+            game.set_dart(i, lab, pts)
+            if i < len(turn_recs) and turn_recs[i]:
+                set_label(turn_recs[i], lab, "corrected")
+            if i < len(marks) and marks[i]:
+                marks[i] = (marks[i][0], marks[i][1], lab)
+            status = f"dart {i + 1} corrected to {lab}"
+        print(f"[{game.player}] {status}")
+
     while True:
         frames = grab(cams)
         ev = tracker.update(frames)
-        if ev:
+        if ev and screen == "play":
             saved = rec.save(ev["before_raw"], frames, ev) if rec and ev["type"] in ("DART", "UNKNOWN") else None
-            if ev["type"] == "DART":
+            if game.leg_winner and ev["type"] == "TAKEOUT":
+                finish_leg()
+            elif ev["type"] == "DART" and not game.leg_winner:
                 res = game.add_dart(ev["label"], ev["points"])
-                status = f"{ev['label']} ({ev['points']})  from {ev['cams_used']} cam(s)"
-                if res == "bust":
-                    status += "  BUST"
                 if res == "turn_full":
                     status = f"extra dart seen ({ev['label']}) - ignored"
                 else:
+                    status = f"{ev['label']} ({ev['points']})  from {ev['cams_used']} cam(s)"
+                    if res == "bust":
+                        status += "  BUST"
                     turn_recs.append(saved)
                     marks.append((ev["pos_mm"][0], ev["pos_mm"][1], ev["label"]))
                 last = {n: r for n, r in ev["cams"].items() if r.get("ok")}
@@ -269,74 +349,159 @@ def cmd_play(args):
                 if game.turn or game.bust:
                     game.next_player()
                 status = f"darts pulled - {game.player} to throw"
-                last = {}
-                marks = []
+                last, marks = {}, []
                 print(status)
-            elif ev["type"] == "UNKNOWN":
+            elif ev["type"] == "UNKNOWN" and not game.leg_winner:
                 pending_unknown = saved
                 status = "couldn't read that one - type it in the box"
                 print(status, {n: r.get("reason") for n, r in ev.get("cams", {}).items()})
-                if entry is None:
-                    entry, entry_title = "", "Couldn't read that dart - what was it?"
-        ovs = []
-        for c in cams:
-            cal = cals.get(c.name)
+                if entry is None and len(game.turn) < 3:
+                    open_entry("pending", "Couldn't read that dart - what was it?")
 
-            def ov(img, sx, sy, cal=cal, name=c.name):
-                if cal is None:
-                    return
-                board.draw_board_overlay(img, scaled_H(cal["H"], sx, sy), (0, 120, 0), 1, False)
-                r = last.get(name)
-                if r:
-                    x, y = r["tip_px"]
-                    cv2.circle(img, (int(x * sx), int(y * sy)), 6, RED, 2, cv2.LINE_AA)
-            ovs.append(ov)
-        W, H = ui.window_size("dartvision")
-        note = f"Update {UPDATE['latest']} available (installs on quit)" if UPDATE.get("latest") else None
-        hint = checkout_hint(game.scores[game.player]) if not game.bust else None
-        out = ui.draw_play(W, H, game, [frames[c.name] for c in cams], [c.name for c in cams], ovs,
-                           status, marks, hint, note)
+        W, H = ui.window_size(WIN)
+        if screen == "menu":
+            out, hits = ui.draw_menu(W, H, MODES, sel_row, mode_i, menu_opts(), players, typing)
+        else:
+            ovs = []
+            for c in cams:
+                cal = cals.get(c.name)
+
+                def ov(img, sx, sy, cal=cal, name=c.name):
+                    if cal is None:
+                        return
+                    board.draw_board_overlay(img, scaled_H(cal["H"], sx, sy), (0, 120, 0), 1, False)
+                    r = last.get(name)
+                    if r:
+                        x, y = r["tip_px"]
+                        cv2.circle(img, (int(x * sx), int(y * sy)), 6, RED, 2, cv2.LINE_AA)
+                ovs.append(ov)
+            note = f"Update {UPDATE['latest']} available (installs on quit)" if UPDATE.get("latest") else None
+            out, hits = ui.draw_play(W, H, game, [frames[c.name] for c in cams], [c.name for c in cams], ovs,
+                                     status, [m for m in marks if m], show_cams, note,
+                                     entry_target if entry is not None else None)
+            if game.leg_winner and entry is None:
+                w = game.leg_winner
+                if game.match_winner:
+                    ui.draw_banner(out, f"{w} wins!", [
+                        "  -  ".join(f"{p} {game.legs[p]}" for p in game.players) if game.legs_to_win > 1 else "",
+                        "Enter = back to the menu      a dart was wrong? press 1, 2 or 3"])
+                else:
+                    ui.draw_banner(out, f"{w} wins the leg", [
+                        "legs  " + "  -  ".join(f"{p} {game.legs[p]}" for p in game.players),
+                        "pull the darts out or press Enter for the next leg"])
+            if entry is not None:
+                _draw_entry_box(out, entry_title, entry)
+        cv2.imshow(WIN, out)
+        k = _key(cv2.waitKeyEx(1))
+        hit = _hit(hits, click["pos"])
+        click["pos"] = None
+        if cv2.getWindowProperty(WIN, cv2.WND_PROP_VISIBLE) < 1:
+            break
+
+        # ------------------------------------------------ menu
+        if screen == "menu":
+            n_opts = len(menu_opts())
+            add_row = n_opts + 1
+            if hit:
+                if hit.startswith("mode"):
+                    mode_i, sel_row = int(hit[4:]), 0
+                elif hit.startswith("opt"):
+                    sel_row = int(hit[3:]); change_opt(sel_row, 1)
+                elif hit.startswith("del"):
+                    players.pop(int(hit[3:]))
+                elif hit == "add":
+                    sel_row = add_row
+                elif hit == "start" and players:
+                    start_game()
+            if k is None:
+                continue
+            if k == "esc" or (k == "q" and not typing):
+                break
+            if k == "up":
+                sel_row = max(0, sel_row - 1)
+            elif k == "down":
+                sel_row = min(add_row, sel_row + 1)
+            elif k in ("left", "right"):
+                if sel_row <= n_opts:
+                    change_opt(sel_row, -1 if k == "left" else 1)
+            elif k == "enter":
+                if typing.strip():
+                    players.append(typing.strip()[:14]); typing = ""
+                elif players:
+                    start_game()
+            elif k == "back":
+                if typing:
+                    typing = typing[:-1]
+                elif players:
+                    players.pop()
+            elif len(k) == 1 and (k.isalnum() or k in " -'") and len(players) < 6:
+                if not typing:
+                    if "Player 1" in players and len(players) == 1:
+                        players.clear()
+                sel_row = add_row
+                typing = (typing + k)[:14]
+                typing = typing[:1].upper() + typing[1:]
+            continue
+
+        # ------------------------------------------------ correction box open
         if entry is not None:
-            _draw_entry_box(out, entry_title, entry)
-        cv2.imshow("dartvision", out)
-        k = cv2.waitKey(1) & 0xFF
-        if entry is not None:                     # typing into the box: keys are text, not commands
-            if k in (13, 10):                     # Enter
+            if k == "enter":
                 if entry.strip():
                     apply_entry(entry)
                 entry = None
-            elif k == 27:                         # Esc
+            elif k == "esc":
                 entry = None; status = "cancelled"
-            elif k in (8, 127):                   # Backspace
+            elif k == "back":
                 entry = entry[:-1]
-            elif k != 255 and chr(k).isalnum() and len(entry) < 8:
-                entry += chr(k).upper()
+            elif k and len(k) == 1 and k.isalnum() and len(entry) < 8:
+                entry += k.upper()
             continue
-        if k in (ord("q"), 27):
+
+        # ------------------------------------------------ playing
+        if hit and hit.startswith("dart"):
+            j = int(hit[4:])
+            if j <= len(game.turn):
+                open_entry(j, f"Dart {j + 1} was:")
+        if k is None:
+            continue
+        if k == "q" or k == "esc":
             end_turn()
-            break
-        if k == ord("u"):
+            if game and not game.match_winner and any(game.legs.values()):
+                log_result("unfinished")
+            screen = "menu"
+            continue
+        if k == "enter" and game.leg_winner:
+            finish_leg()
+            continue
+        if k in ("1", "2", "3"):
+            j = int(k) - 1
+            if j <= len(game.turn):
+                open_entry(j, f"Dart {j + 1} was:")
+        if k == "c":
+            j = max(0, len(game.turn) - 1) if game.turn else 0
+            open_entry(j, "Correct the last dart to:" if game.turn else "Dart 1 was:")
+        if k == "v":
+            show_cams = not show_cams
+        if k == "u":
             if turn_recs:
                 d = turn_recs.pop()
                 if d:
                     set_label(d, "FALSE", "undone")      # remember it as a false detection
-            game.undo(); status = "undid last dart"
             if marks:
                 marks.pop()
-        if k == ord("m"):
-            game.add_dart("MISS", 0); turn_recs.append(None); status = "miss added"
-        if k == ord("n"):
+            game.undo(); status = "undid last dart"
+        if k == "m":
+            if game.add_dart("MISS", 0) != "turn_full":
+                turn_recs.append(None); marks.append(None); status = "miss added"
+        if k == "n" or k == "r":                  # darts are out but it didn't notice: end the turn
             end_turn()
-            game.next_player(); tracker.reset(grab(cams)); status = f"{game.player} to throw"
-            marks = []
-        if k == ord("r"):                         # darts are out but it didn't notice: end the turn
-            end_turn()
-            if game.turn or game.bust:
+            if game.leg_winner:
+                finish_leg()
+                continue
+            if game.turn or game.bust or k == "n":
                 game.next_player()
-            tracker.reset(grab(cams)); marks = []; last = {}
-            status = f"reset - {game.player} to throw"
-        if k == ord("c"):
-            entry, entry_title = "", "Correct the last dart to:"
+            tracker.reset(grab(cams)); marks, last = [], {}
+            status = f"{game.player} to throw"
     for c in cams:
         c.close()
     cv2.destroyAllWindows()
@@ -454,7 +619,7 @@ def main(argv=None):
     sub.add_parser("preview")
     s = sub.add_parser("calibrate"); s.add_argument("--camera", help="only this camera name")
     s = sub.add_parser("play"); s.add_argument("players", nargs="*", default=["Player 1"])
-    s.add_argument("--start", type=int, default=501); s.add_argument("--no-record", action="store_true")
+    s.add_argument("--start", type=int, default=501, help="pre-select 301 / 501 / 701 in the menu"); s.add_argument("--no-record", action="store_true")
     s = sub.add_parser("label"); s.add_argument("session"); s.add_argument("--all", action="store_true")
     s = sub.add_parser("replay"); s.add_argument("session")
     s = sub.add_parser("update"); s.add_argument("-y", "--yes", action="store_true")

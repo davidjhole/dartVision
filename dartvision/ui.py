@@ -106,42 +106,51 @@ def board_view(size, marks):
     return img
 
 
-def draw_play(W, H, game, frames, names, overlays, status, marks, hint=None, note=None):
-    """The whole game screen. Left: scores + this turn. Right: board + cameras."""
+def draw_play(W, H, game, frames, names, overlays, status, marks, show_cams=False, note=None, edit=None):
+    """The whole game screen. Returns (image, clickable areas {name: (x0, y0, x1, y1)}).
+    Left: scores + this turn. Right: board with this turn's darts (+ cameras if show_cams)."""
     out = np.full((H, W, 3), BG, np.uint8)
+    hits = {}
     u = H / 900.0                                   # scale everything with the window height
     pad = int(24 * u)
-    left_w = int(W * 0.46)
+    left_w = int(W * (0.46 if show_cams else 0.52))
     right_x = left_w + pad
 
     # ---- header
-    text(out, f"{game.start}  double out", (pad, int(48 * u)), 0.8 * u, GREY, 1)
-    if game.winner:
-        text(out, f"{game.winner} WINS!", (left_w - pad, int(50 * u)), 1.2 * u, GOOD, 2, BOLD, "r")
+    title = getattr(game, "mode_title", game.name)
+    if game.legs_to_win > 1:
+        title += f"   first to {game.legs_to_win} legs"
+    text(out, title, (pad, int(48 * u)), fit_size(title, FONT, 1, left_w - 2 * pad, 0.8 * u), GREY, 1)
 
     # ---- players
-    y = int(80 * u)
+    y = int(72 * u)
     n = len(game.players)
-    card_h = int(min(190, 560 / max(1, n)) * u)
+    card_h = int(min(170, 520 / max(1, n)) * u)
     for i, pl in enumerate(game.players):
         active = i == game.cur
-        box(out, (pad, y), (left_w - pad, y + card_h - int(10 * u)), CARD if active else PANEL, int(14 * u))
-        if active:
-            box(out, (pad, y), (pad + int(10 * u), y + card_h - int(10 * u)), ACTIVE, int(4 * u))
         inner_h = card_h - int(10 * u)
-        name_sz = fit_size(pl, BOLD, 2, int((left_w - 2 * pad) * 0.42), 1.3 * u)
-        text(out, pl, (pad + int(30 * u), y + int(inner_h * 0.42)), name_sz, WHITE if active else GREY, 2, BOLD)
-        text(out, f"avg {game.three_dart_avg(pl):.1f}", (pad + int(30 * u), y + int(inner_h * 0.75)),
-             0.65 * u, GREY, 1)
-        score = str(game.scores[pl])
-        ssz = fit_size(score, BOLD, 4, int((left_w - 2 * pad) * 0.5), inner_h / 46.0)
-        text(out, score, (left_w - pad - int(24 * u), y + int(inner_h * 0.5 + 18 * ssz)),
+        box(out, (pad, y), (left_w - pad, y + inner_h), CARD if active else PANEL, int(14 * u))
+        if active:
+            box(out, (pad, y), (pad + int(10 * u), y + inner_h), ACTIVE, int(4 * u))
+        big, small_txt = game.card(pl)
+        name_sz = fit_size(pl, BOLD, 2, int((left_w - 2 * pad) * 0.42), min(1.3 * u, inner_h / 70))
+        text(out, pl, (pad + int(30 * u), y + int(inner_h * 0.45)), name_sz, WHITE if active else GREY, 2, BOLD)
+        text(out, small_txt, (pad + int(30 * u), y + int(inner_h * 0.78)), min(0.65 * u, inner_h / 120), GREY, 1)
+        ssz = fit_size(big, BOLD, 4, int((left_w - 2 * pad) * 0.5), inner_h / 46.0)
+        text(out, big, (left_w - pad - int(24 * u), y + int(inner_h * 0.5 + 18 * ssz)),
              ssz, (ACCENT if active else WHITE), max(2, int(4 * u)), BOLD, "r")
+        if game.legs_to_win > 1:
+            for k in range(game.legs_to_win):           # leg dots
+                cx = pad + int(30 * u) + k * int(18 * u)
+                cv2.circle(out, (cx, y + int(inner_h * 0.9)), int(5 * u), GOOD if k < game.legs[pl] else DIM, -1,
+                           cv2.LINE_AA)
         y += card_h
 
-    # ---- this turn: three dart boxes and the total
-    y += int(10 * u)
+    # ---- this turn: three dart boxes (click one to correct it)
+    y += int(6 * u)
     text(out, f"{game.player} - this turn", (pad, y + int(22 * u)), 0.7 * u, GREY, 1)
+    text(out, "click a dart or press 1 2 3 to correct it", (left_w - pad, y + int(22 * u)), 0.5 * u, DIM, 1,
+         FONT, "r")
     y += int(36 * u)
     bw = (left_w - 2 * pad - 2 * int(14 * u)) // 3
     bh = int(110 * u)
@@ -149,6 +158,8 @@ def draw_play(W, H, game, frames, names, overlays, status, marks, hint=None, not
         x0 = pad + j * (bw + int(14 * u))
         has = j < len(game.turn)
         box(out, (x0, y), (x0 + bw, y + bh), CARD if has else PANEL, int(12 * u))
+        if edit == j:
+            cv2.rectangle(out, (x0, y), (x0 + bw, y + bh), ACCENT, max(1, int(3 * u)))
         if has:
             lab, pts = game.turn[j]
             box(out, (x0, y), (x0 + bw, y + int(6 * u)), MARK_COLS[j], int(3 * u))
@@ -157,35 +168,148 @@ def draw_play(W, H, game, frames, names, overlays, status, marks, hint=None, not
             text(out, str(pts), (x0 + bw // 2, y + int(bh * 0.85)), 0.7 * u, GREY, 1, FONT, "c")
         else:
             text(out, "-", (x0 + bw // 2, y + int(bh * 0.6)), 1.2 * u, DIM, 2, BOLD, "c")
+        hits[f"dart{j}"] = (x0, y, x0 + bw, y + bh)
     y += bh + int(44 * u)
     total = sum(p for _, p in game.turn)
     tw = text(out, "turn ", (pad, y), 0.8 * u, GREY, 1)
     text(out, f"{total}", (pad + tw, y), 1.5 * u, WHITE, 2, BOLD)
+    hint = game.hint()
     if game.bust:
         text(out, "BUST - pull the darts", (left_w - pad, y), 0.9 * u, BAD, 2, BOLD, "r")
     elif hint:
-        text(out, f"checkout  {hint}", (left_w - pad, y), 0.8 * u, GOOD, 2, BOLD, "r")
+        text(out, hint, (left_w - pad, y), fit_size(hint, BOLD, 2, left_w // 2, 0.8 * u), GOOD, 2, BOLD, "r")
 
     # ---- status + keys at the bottom left
     yb = H - pad
-    keys = "C correct    U undo    M miss    N next player    R darts out    Q quit"
+    keys = "C correct   U undo   M miss   R darts out   V cameras   Q quit"
     text(out, keys, (pad, yb), fit_size(keys, FONT, 1, left_w - 2 * pad, 0.55 * u), DIM, 1)
     text(out, status[:60], (pad, yb - int(34 * u)), fit_size(status[:60], FONT, 1, left_w - 2 * pad, 0.75 * u),
          ACCENT, 1)
     if note:
         text(out, note, (pad, yb - int(66 * u)), 0.55 * u, GOOD, 1)
 
-    # ---- right: board on top, cameras below
+    # ---- right side
     rw = W - right_x - pad
-    cam_h = int(rw * 9 / 16)                      # 2 x 2 grid of 16:9 tiles at this width
-    bsize = max(120, min(rw, H - cam_h - 3 * pad))
-    bimg = board_view(bsize, marks)
-    bx = right_x + (rw - bsize) // 2
-    out[pad:pad + bsize, bx:bx + bsize] = bimg
-    cy = pad + bsize + pad
-    ch = H - cy - pad
-    if ch > 60 and frames:
-        cw = min(rw, int(ch * 16 / 9))
-        grid = camera_grid(frames, names, overlays, cw, ch)
-        out[cy:cy + ch, right_x + (rw - cw) // 2:right_x + (rw - cw) // 2 + cw] = grid
-    return out
+    top, bottom = pad, H - pad
+    if show_cams and frames:
+        cam_h = min(int(rw * 9 / 16), (H - 2 * pad) // 2)
+        cw = int(cam_h * 16 / 9)
+        grid = camera_grid(frames, names, overlays, cw, cam_h)
+        out[bottom - cam_h:bottom, right_x + (rw - cw) // 2:right_x + (rw - cw) // 2 + cw] = grid
+        bottom -= cam_h + pad
+    rows = game.table()
+    if rows:
+        th = min(bottom - top, int((bottom - top) * 0.55))
+        _draw_table(out, rows, game, right_x, top, rw, th, u)
+        top += th + pad
+    bsize = max(120, min(rw, bottom - top))
+    out[top:top + bsize, right_x + (rw - bsize) // 2:right_x + (rw - bsize) // 2 + bsize] = board_view(bsize, marks)
+    return out, hits
+
+
+def _draw_table(out, rows, game, x, y, w, h, u):
+    """Cricket-style grid: number in the middle column, each player's marks either side."""
+    n = len(game.players)
+    rh = h // (len(rows) + 1)
+    colw = w // (n + 1)
+    for i, pl in enumerate(game.players):
+        cx = x + colw * (i + (1 if i >= (n + 1) // 2 else 0)) + colw // 2
+        text(out, pl[:8], (cx, y + int(rh * 0.7)), fit_size(pl[:8], BOLD, 1, colw - 8, 0.7 * u),
+             ACCENT if i == game.cur else GREY, 1, BOLD, "c")
+    mid = x + colw * ((n + 1) // 2) + colw // 2
+    for r, (lab, marks, closed) in enumerate(rows):
+        yy = y + rh * (r + 1)
+        box(out, (x, yy + 2), (x + w, yy + rh - 2), PANEL, int(6 * u))
+        text(out, lab, (mid, yy + int(rh * 0.72)), min(1.0 * u, rh / 40), DIM if closed else WHITE, 2, BOLD, "c")
+        for i, m in enumerate(marks):
+            cx = x + colw * (i + (1 if i >= (n + 1) // 2 else 0)) + colw // 2
+            cy = yy + rh // 2
+            r0 = max(4, int(rh * 0.3))
+            col = GOOD if m >= 3 else WHITE
+            if m >= 1:
+                cv2.line(out, (cx - r0, cy + r0), (cx + r0, cy - r0), col, max(1, int(3 * u)), cv2.LINE_AA)
+            if m >= 2:
+                cv2.line(out, (cx - r0, cy - r0), (cx + r0, cy + r0), col, max(1, int(3 * u)), cv2.LINE_AA)
+            if m >= 3:
+                cv2.circle(out, (cx, cy), r0 + int(4 * u), col, max(1, int(3 * u)), cv2.LINE_AA)
+
+
+def draw_banner(out, title, lines):
+    """Big centred message (leg / match won)."""
+    H, W = out.shape[:2]
+    u = H / 900.0
+    bw, bh = int(W * 0.6), int((120 + 44 * len(lines)) * u)
+    x0, y0 = (W - bw) // 2, (H - bh) // 2
+    over = out.copy()
+    cv2.rectangle(over, (0, 0), (W, H), (0, 0, 0), -1)
+    cv2.addWeighted(over, 0.45, out, 0.55, 0, out)
+    box(out, (x0, y0), (x0 + bw, y0 + bh), CARD, int(18 * u))
+    box(out, (x0, y0), (x0 + bw, y0 + int(8 * u)), GOOD, int(4 * u))
+    text(out, title, (W // 2, y0 + int(80 * u)), fit_size(title, BOLD, 3, bw - 40, 1.8 * u), WHITE, 3, BOLD, "c")
+    for i, l in enumerate(lines):
+        text(out, l, (W // 2, y0 + int((130 + 44 * i) * u)), fit_size(l, FONT, 1, bw - 40, 0.8 * u), GREY, 1,
+             FONT, "c")
+
+
+def draw_menu(W, H, modes, sel_row, mode_i, opts, players, typing):
+    """Start screen: pick a game, options and players with the keyboard."""
+    out = np.full((H, W, 3), BG, np.uint8)
+    hits = {}
+    u = H / 900.0
+    pad = int(40 * u)
+    text(out, "dartvision", (pad, int(80 * u)), 1.6 * u, WHITE, 3, BOLD)
+    help_ = ("Up/Down choose   Left/Right change   type a name + Enter to add a player   "
+             "Backspace remove   Enter start   Esc quit   (or click)")
+    text(out, help_, (pad, H - pad), fit_size(help_, FONT, 1, W - 2 * pad, 0.55 * u), DIM, 1)
+    x_mid = W // 2
+    # left: game list
+    y = int(140 * u)
+    text(out, "Game", (pad, y), 0.8 * u, GREY, 1)
+    y += int(20 * u)
+    rh = int(64 * u)
+    for i, (name, _) in enumerate(modes):
+        on = i == mode_i
+        box(out, (pad, y), (x_mid - pad, y + rh - int(10 * u)), CARD if on else PANEL, int(12 * u))
+        if on:
+            box(out, (pad, y), (pad + int(8 * u), y + rh - int(10 * u)), ACTIVE if sel_row == 0 else GREY, int(4 * u))
+        text(out, name, (pad + int(28 * u), y + int(rh * 0.55)), 0.9 * u, WHITE if on else GREY, 2, BOLD)
+        hits[f"mode{i}"] = (pad, y, x_mid - pad, y + rh - int(10 * u))
+        y += rh
+    # right: options + players
+    x = x_mid + pad
+    y = int(140 * u)
+    text(out, "Options", (x, y), 0.8 * u, GREY, 1)
+    y += int(20 * u)
+    for r, (label, value) in enumerate(opts, start=1):
+        on = sel_row == r
+        box(out, (x, y), (W - pad, y + rh - int(10 * u)), CARD if on else PANEL, int(12 * u))
+        text(out, label, (x + int(24 * u), y + int(rh * 0.55)), 0.75 * u, WHITE if on else GREY, 1)
+        text(out, f"<  {value}  >" if on else value, (W - pad - int(24 * u), y + int(rh * 0.55)), 0.85 * u,
+             ACCENT if on else WHITE, 2, BOLD, "r")
+        hits[f"opt{r}"] = (x, y, W - pad, y + rh - int(10 * u))
+        y += rh
+    y += int(30 * u)
+    text(out, "Players", (x, y), 0.8 * u, GREY, 1)
+    y += int(20 * u)
+    for i, p in enumerate(players):
+        box(out, (x, y), (W - pad, y + rh - int(10 * u)), PANEL, int(12 * u))
+        text(out, p, (x + int(24 * u), y + int(rh * 0.55)), 0.9 * u, WHITE, 2, BOLD)
+        text(out, "x", (W - pad - int(24 * u), y + int(rh * 0.55)), 0.8 * u, DIM, 2, BOLD, "r")
+        hits[f"del{i}"] = (W - pad - int(60 * u), y, W - pad, y + rh - int(10 * u))
+        y += rh
+    if len(players) < 6:
+        on = sel_row == len(opts) + 1
+        box(out, (x, y), (W - pad, y + rh - int(10 * u)), CARD if on else PANEL, int(12 * u))
+        caret = "_" if on and int(cv2.getTickCount() / cv2.getTickFrequency() * 2) % 2 else ""
+        t = typing + caret if (typing or on) else "+ add player"
+        text(out, t, (x + int(24 * u), y + int(rh * 0.55)), 0.9 * u, ACCENT if on else DIM, 2, BOLD)
+        hits["add"] = (x, y, W - pad, y + rh - int(10 * u))
+        y += rh
+    # start button
+    y = max(y + int(20 * u), H - pad - int(110 * u))
+    ok = bool(players)
+    box(out, (x, y), (W - pad, y + int(70 * u)), GOOD if ok else PANEL, int(14 * u))
+    text(out, "Start  (Enter)" if ok else "add a player to start", ((x + W - pad) // 2, y + int(47 * u)),
+         1.0 * u, (20, 20, 20) if ok else DIM, 2, BOLD, "c")
+    hits["start"] = (x, y, W - pad, y + int(70 * u))
+    return out, hits

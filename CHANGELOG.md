@@ -3,6 +3,10 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- Start menu: 501 / 301 / 701 (double in / out), Cricket, Around the clock, Count up; first-to-N legs;
+  players typed in the window. A won leg stops the game and shows the result; results are saved to
+  recordings/results.jsonl.
+- Any dart of the turn can be corrected: click it or press 1 / 2 / 3. Cameras hidden while playing (V shows them).
 - Pulling darts out one at a time no longer scores an extra dart (a removed dart is recognised because
   the board goes back to how it looked empty). A hand pulling darts doesn't pop up the 'what was it' box.
 - R now means "darts are out": ends the turn, moves to the next player and resets.
