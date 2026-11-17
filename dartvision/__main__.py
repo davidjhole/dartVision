@@ -179,7 +179,7 @@ def _draw_scoreboard(game, last_events, status, w=420, h=720):
         cv2.putText(p, f"Update {UPDATE['latest']} available (installs on quit)", (16, y - 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, GREEN, 1, cv2.LINE_AA)
     cv2.putText(p, status[:40], (16, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, YELLOW, 1, cv2.LINE_AA)
-    keys = ["C correct last dart (type in terminal)", "U undo last dart   M add miss",
+    keys = ["C correct last dart", "U undo last dart   M add miss",
             "N next player   R re-baseline", "Q quit"]
     for i, t in enumerate(keys):
         cv2.putText(p, t, (16, y + 30 + 24 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.5, GREY, 1, cv2.LINE_AA)
@@ -210,6 +210,25 @@ def cmd_play(args):
     status = "Ready - throw!"
     turn_recs = []          # recording folder for each dart in the current turn (None = typed in)
     pending_unknown = None  # recording of a throw we couldn't read, waiting for C
+    entry = None            # text being typed into the on-screen box (None = box closed)
+    entry_title = ""
+
+    def apply_entry(txt):
+        nonlocal pending_unknown, status
+        try:
+            lab, pts = parse_score(txt)
+        except Exception as e:  # noqa
+            status = f"didn't understand '{txt}' ({e})"
+            return
+        if pending_unknown:                       # a throw we couldn't read
+            game.add_dart(lab, pts); turn_recs.append(pending_unknown)
+            set_label(pending_unknown, lab, "entered"); pending_unknown = None
+        else:
+            game.correct_last(lab, pts)
+            if turn_recs and turn_recs[-1]:
+                set_label(turn_recs[-1], lab, "corrected")
+        status = f"corrected to {lab}"
+        print(f"[{game.player}] {status}")
 
     def end_turn():
         nonlocal turn_recs
@@ -244,8 +263,10 @@ def cmd_play(args):
                 print(status)
             elif ev["type"] == "UNKNOWN":
                 pending_unknown = saved
-                status = "couldn't read that one - press C to enter it"
+                status = "couldn't read that one - type it in the box"
                 print(status, {n: r.get("reason") for n, r in ev.get("cams", {}).items()})
+                if entry is None:
+                    entry, entry_title = "", "Couldn't read that dart - what was it?"
         ovs = []
         for c in cams:
             cal = cals.get(c.name)
@@ -261,8 +282,23 @@ def cmd_play(args):
             ovs.append(ov)
         view = tile([frames[c.name] for c in cams], ovs, [c.name for c in cams])
         sb = _draw_scoreboard(game, last, status, h=view.shape[0])
-        cv2.imshow("dartvision", np.hstack([view, sb]))
+        out = np.hstack([view, sb])
+        if entry is not None:
+            _draw_entry_box(out, entry_title, entry)
+        cv2.imshow("dartvision", out)
         k = cv2.waitKey(1) & 0xFF
+        if entry is not None:                     # typing into the box: keys are text, not commands
+            if k in (13, 10):                     # Enter
+                if entry.strip():
+                    apply_entry(entry)
+                entry = None
+            elif k == 27:                         # Esc
+                entry = None; status = "cancelled"
+            elif k in (8, 127):                   # Backspace
+                entry = entry[:-1]
+            elif k != 255 and chr(k).isalnum() and len(entry) < 8:
+                entry += chr(k).upper()
+            continue
         if k in (ord("q"), 27):
             end_turn()
             break
@@ -280,23 +316,28 @@ def cmd_play(args):
         if k == ord("r"):
             tracker.reset(grab(cams)); status = "re-baselined (board must be clear of new darts)"
         if k == ord("c"):
-            try:
-                txt = input("Correct last dart to (e.g. T20, D16, 5, SB, DB, MISS): ")
-                lab, pts = parse_score(txt)
-                if pending_unknown:                       # a throw we couldn't read
-                    game.add_dart(lab, pts); turn_recs.append(pending_unknown)
-                    set_label(pending_unknown, lab, "entered"); pending_unknown = None
-                else:
-                    game.correct_last(lab, pts)
-                    if turn_recs and turn_recs[-1]:
-                        set_label(turn_recs[-1], lab, "corrected")
-                status = f"corrected to {lab}"
-            except Exception as e:  # noqa
-                status = f"bad input: {e}"
+            entry, entry_title = "", "Correct the last dart to:"
     for c in cams:
         c.close()
     cv2.destroyAllWindows()
     offer_update(cfg)
+
+
+def _draw_entry_box(img, title, text):
+    """On-screen text box for typing a score (no need to switch to the terminal)."""
+    h, w = img.shape[:2]
+    bw, bh = 560, 190
+    x0, y0 = (w - bw) // 2, (h - bh) // 2
+    over = img.copy()
+    cv2.rectangle(over, (x0, y0), (x0 + bw, y0 + bh), (25, 25, 25), -1)
+    cv2.addWeighted(over, 0.9, img, 0.1, 0, img)
+    cv2.rectangle(img, (x0, y0), (x0 + bw, y0 + bh), (0, 200, 255), 2)
+    cv2.putText(img, title, (x0 + 20, y0 + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.75, WHITE, 2, cv2.LINE_AA)
+    cv2.rectangle(img, (x0 + 20, y0 + 62), (x0 + bw - 20, y0 + 122), (60, 60, 60), -1)
+    caret = "_" if int(time.time() * 2) % 2 else " "
+    cv2.putText(img, text + caret, (x0 + 32, y0 + 108), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 230, 255), 3, cv2.LINE_AA)
+    cv2.putText(img, "e.g. T20  D16  5  SB  DB  MISS     Enter = save   Esc = cancel",
+                (x0 + 20, y0 + 160), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (190, 190, 190), 1, cv2.LINE_AA)
 
 
 def offer_update(cfg):
