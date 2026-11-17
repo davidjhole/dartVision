@@ -93,10 +93,10 @@ def calibrate_camera(cam, folder="calib"):
                 cv2.putText(view, str(i + 1), (q[0] + 7, q[1] - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
         nxt = pts.index(None) if not done else None
         msg = (f"[{cam.name}] click {nxt + 1}/{n_pts}: {board.CALIB_POINTS[nxt][0]}" if nxt is not None
-               else f"[{cam.name}] fit error {err:.2f}px  - drag points to adjust, S save")
+               else f"[{cam.name}] fit error {err:.2f}px  - drag points to adjust, S to save + next camera")
         cv2.rectangle(view, (0, 0), (view.shape[1], 52), (0, 0, 0), -1)
         cv2.putText(view, msg, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.putText(view, "F freeze  U undo  R reset  S save  N next camera  Q quit",
+        cv2.putText(view, "F freeze  U undo  R reset  S save + next  N skip camera  Q quit",
                     (10, 44), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (170, 170, 170), 1, cv2.LINE_AA)
         g = _guide(nxt if nxt is not None else -1)
         view[60:60 + g.shape[0], 10:10 + g.shape[1]] = g
@@ -111,6 +111,10 @@ def calibrate_camera(cam, folder="calib"):
         if k in (ord("q"), 27):
             break
         if k == ord("n"):
+            if done and not saved and not state.get("skip_warned"):
+                print(f"[{cam.name}] not saved - press S to save, or N again to skip this camera")
+                state["skip_warned"] = True
+                continue
             break
         if k == ord("f"):
             state["frozen"] = None if state["frozen"] is not None else frame.copy()
@@ -124,5 +128,6 @@ def calibrate_camera(cam, folder="calib"):
             save_calibration(cam.name, pts, [p for _, p in board.CALIB_POINTS], H, cam.size, folder)
             print(f"saved calibration for {cam.name} (fit error {err:.2f}px)")
             saved = True
+            break                                   # straight on to the next camera
     cv2.destroyWindow(WIN)
     return {"saved": saved, "quit": k in (ord("q"), 27)}

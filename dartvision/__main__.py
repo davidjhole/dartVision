@@ -135,7 +135,7 @@ def cmd_calibrate(args):
     cams = open_cameras(cfg, only=args.camera, config_path=args.config)
     print("For each camera click: 1) the bull centre, then where the wire meets the OUTER edge of")
     print("the double ring 2) between 20 and 1, 3) between 6 and 10, 4) between 3 and 19, 5) between 11 and 14.")
-    print("Use F to freeze the picture, drag points to fine tune, S to save, N for next camera.")
+    print("Use F to freeze the picture, drag points to fine tune, S to save and go to the next camera (N skips one).")
     try:
         for c in cams:
             r = calibrate_camera(c)

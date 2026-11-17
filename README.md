@@ -51,7 +51,8 @@ Click, in order: **1** the bull centre, then where a wire meets the **outer edge
 **2** between 20 and 1, **3** between 6 and 10, **4** between 3 and 19, **5** between 11 and 14.
 The little board top-left shows which point is next, and the box top-right is a magnifier.
 When all 5 are placed a green wire overlay appears – drag points until it sits exactly on the
-real wires, then **S** to save and **N** for the next camera. (`F` freezes the image.)
+real wires, then **S** to save – it moves straight on to the next camera (**N** skips a camera
+without saving). (`F` freezes the image.)
 Redo this whenever a camera or the board moves.
 
 ## 4. Play
