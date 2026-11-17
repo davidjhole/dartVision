@@ -182,7 +182,7 @@ def _draw_scoreboard(game, last_events, status, w=420, h=720):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, GREEN, 1, cv2.LINE_AA)
     cv2.putText(p, status[:40], (16, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, YELLOW, 1, cv2.LINE_AA)
     keys = ["C correct last dart", "U undo last dart   M add miss",
-            "N next player   R re-baseline", "Q quit"]
+            "N next player   R darts out / reset", "Q quit"]
     for i, t in enumerate(keys):
         cv2.putText(p, t, (16, y + 30 + 24 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.5, GREY, 1, cv2.LINE_AA)
     return p
@@ -329,8 +329,12 @@ def cmd_play(args):
             end_turn()
             game.next_player(); tracker.reset(grab(cams)); status = f"{game.player} to throw"
             marks = []
-        if k == ord("r"):
-            tracker.reset(grab(cams)); status = "re-baselined (board must be clear of new darts)"
+        if k == ord("r"):                         # darts are out but it didn't notice: end the turn
+            end_turn()
+            if game.turn or game.bust:
+                game.next_player()
+            tracker.reset(grab(cams)); marks = []; last = {}
+            status = f"reset - {game.player} to throw"
         if k == ord("c"):
             entry, entry_title = "", "Correct the last dart to:"
     for c in cams:

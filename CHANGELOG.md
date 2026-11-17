@@ -3,6 +3,9 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- Pulling darts out one at a time no longer scores an extra dart (a removed dart is recognised because
+  the board goes back to how it looked empty). A hand pulling darts doesn't pop up the 'what was it' box.
+- R now means "darts are out": ends the turn, moves to the next player and resets.
 - Detection rebuilt for low cameras (from the first real game): each camera now gives its line of
   sight through the dart (left-right position in the picture is precise, height isn't) and the lines
   are crossed. Darts that show as several pieces are joined up; blobs that aren't dart-shaped or don't

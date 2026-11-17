@@ -287,6 +287,18 @@ class ThrowTracker:
         if self.darts_on_board and all(vs_empty[n] < self.det["min_dart_px"] for n in g):
             self.reference = dict(g); self.empty = dict(g); self.darts_on_board = 0
             return {"type": "TAKEOUT"}
+        # a dart being pulled out also leaves a dart-shaped change - but there the picture goes
+        # back to how the empty board looked. A new dart differs from the empty board too.
+        if self.darts_on_board:
+            ratios = []
+            for n in changed:
+                m_ref = change_mask(self.reference[n], g[n], thr, self.roi.get(n)) > 0
+                m_emp = change_mask(self.empty[n], g[n], thr, self.roi.get(n)) > 0
+                ratios.append((m_ref & m_emp).sum() / max(1, m_ref.sum()))
+            if ratios and float(np.median(ratios)) < 0.35:
+                self.reference = dict(g)
+                self.darts_on_board = max(0, self.darts_on_board - 1)
+                return {"type": "REMOVED"}
         per_cam = {}
         for n in g:
             cal = self.calibs.get(n)
@@ -300,6 +312,8 @@ class ThrowTracker:
             if big and all(vs_empty[n] < 3 * self.det["min_dart_px"] for n in g):
                 self.empty = dict(g); self.darts_on_board = 0
                 return {"type": "TAKEOUT", "cams": per_cam}
+            if big and self.darts_on_board:
+                return {"type": "NOTHING", "cams": per_cam}     # a hand pulling darts out
             if not big:
                 # something moved (someone walking past, a hand near the board) but nothing
                 # dart-shaped arrived on the board: ignore it

@@ -63,7 +63,7 @@ python -m dartvision play Dave --start 301
 ```
 Throw – each dart is scored automatically. Pulling the darts out moves to the next player.
 Keys: **C** correct the last dart (a box pops up: type e.g. `T20`, `D16`, `5`, `SB`, `DB`, `MISS`, Enter),
-**U** undo, **M** add a miss (bounce-out), **N** next player, **R** re-baseline, **Q** quit.
+**U** undo, **M** add a miss (bounce-out), **N** next player, **R** darts are out – end the turn and reset (if it didn't notice the darts being pulled), **Q** quit.
 
 ## 5. Improve accuracy with your own throws
 

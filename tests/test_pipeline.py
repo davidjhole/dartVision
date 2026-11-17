@@ -109,6 +109,22 @@ def test_tracker():
     assert events[0][1] == "T20", events
     print("tracker: ok")
 
+    # pulling the darts out one at a time: no extra darts, ends in TAKEOUT
+    tr = ThrowTracker(cals, det, {n: (720, 1280, 3) for n in CAMS})
+    tr.reset(frames([], seed=1))
+    events = []
+    seq = ([frames(darts[:1], seed=s) for s in range(5, 15)] +
+           [frames(darts[:2], seed=s) for s in range(15, 25)] +
+           [frames(darts[:1], seed=s) for s in range(25, 35)] +     # second dart pulled
+           [frames([], seed=s) for s in range(35, 45)])              # first dart pulled
+    for fr in seq:
+        ev = tr.update(fr)
+        if ev:
+            events.append(ev["type"])
+    print("pull one at a time:", events)
+    assert events == ["DART", "DART", "REMOVED", "TAKEOUT"], events
+    print("removal: ok")
+
 
 if __name__ == "__main__":
     test_scoring()

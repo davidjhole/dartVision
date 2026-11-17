@@ -168,7 +168,7 @@ def draw_play(W, H, game, frames, names, overlays, status, marks, hint=None, not
 
     # ---- status + keys at the bottom left
     yb = H - pad
-    keys = "C correct    U undo    M miss    N next player    R re-baseline    Q quit"
+    keys = "C correct    U undo    M miss    N next player    R darts out    Q quit"
     text(out, keys, (pad, yb), fit_size(keys, FONT, 1, left_w - 2 * pad, 0.55 * u), DIM, 1)
     text(out, status[:60], (pad, yb - int(34 * u)), fit_size(status[:60], FONT, 1, left_w - 2 * pad, 0.75 * u),
          ACCENT, 1)
