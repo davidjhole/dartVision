@@ -22,8 +22,22 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 *Mac:* the first time a camera opens, allow camera access for Terminal (System Settings → Privacy & Security → Camera).
-*Raspberry Pi OS Lite* (or any Linux without a desktop): if `import cv2` fails with `libGL.so.1: cannot open shared object file`, run `sudo apt install libgl1 libglib2.0-0`.
-*Raspberry Pi:* if `opencv-python` won't install, use `sudo apt install python3-opencv` and create the venv with `--system-site-packages`.
+
+**Raspberry Pi (no screen needed):** flash **Raspberry Pi OS Lite (64-bit)** with Raspberry Pi Imager
+(in its settings: hostname `dartvision`, your user, Wi-Fi, and *Enable SSH*), `ssh` in, then instead of the steps above:
+```
+sudo apt install -y git
+git clone https://github.com/davidjhole/dartVision.git
+cd dartVision
+scripts/setup_pi.sh
+```
+It installs what the Pi needs (including `libgl1`, which OpenCV needs and Lite leaves out), makes the `.venv`
+and installs the Python packages. Then do 2. and 3. below (calibrate opens a window: connect with `ssh -Y` from a computer
+with an X server - XQuartz on a Mac, VcXsrv on Windows - and press F to freeze the picture), and finish with `scripts/setup_pi.sh service`
+so it starts on boot with no screen - the phone page is at `http://dartvision.local:8080`
+(`scripts/setup_pi.sh remove` undoes that). Stop it with `systemctl --user stop dartvision` before running
+`calibrate` or `preview`: only one program can use the cameras.
+If `opencv-python` won't install, use `sudo apt install python3-opencv` and run `scripts/setup_pi.sh` again.
 
 ## 2. Cameras
 
