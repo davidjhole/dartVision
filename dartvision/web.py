@@ -269,13 +269,8 @@ table.cr td.n{color:var(--text)} table.cr td.closed{color:var(--dim)}
 .panel button{background:#3a3f45}
 .panel .mult button.on{background:var(--active)}
 @media(min-width:1200px){body:not(.nozoom){zoom:1.25}}
-/* the messages bar sits at the bottom of the page (end of the content), not floating over it */
-body{display:flex;flex-direction:column;padding-bottom:0}
-body>div:not(.overlay):not(#flash):not(#info){width:100%}
-#info{margin:16px -14px 0;margin-top:auto;display:flex;gap:10px;align-items:center;justify-content:space-between;
- background:#0e0f10;border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));font-size:13px;cursor:pointer}
-#infot{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
-#info .lb{flex:none;background:var(--card);border-radius:8px;padding:4px 10px;color:var(--text)}
+#infot{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);flex:1;min-width:0;font-size:13px}
+.logrow{gap:10px;cursor:pointer}
 .lv-warn{color:var(--accent)!important} .lv-error{color:var(--bad)!important}
 .logp{max-height:85vh;display:flex;flex-direction:column}
 #logl{overflow:auto;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;background:#111;border-radius:10px;padding:10px;margin:8px 0;flex:1;min-height:200px}
@@ -346,6 +341,8 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <div class="opt"><span>Caller's voice on this phone / screen</span><button class="vbtn" onclick="toggleVoice()">Voice off</button></div>
   <div class="sub">Light</div>
   <button id="tflash" class="calbtn" style="font-weight:800;color:var(--accent)" onclick="act({type:'test_flash'})">Test 180 flash</button>
+  <div class="sub">Log</div>
+  <div class="opt logrow" onclick="toggleLog()"><span id="infot">connecting...</span><button>Show log</button></div>
   <div class="sub">dartvision</div>
   <div class="opt"><span>Version</span><b id="ver" style="color:var(--text)"></b></div>
   <button class="calbtn" onclick="if(confirm('Restart dartvision? It checks for an update first, so give it a minute.'))act({type:'restart'})">Restart and update</button>
@@ -417,8 +414,6 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <h2 id="lostt">Lost connection</h2><div id="lostl" class="title"></div><br>
   <div class="small">This page reconnects by itself when dartvision is running again.</div>
 </div></div>
-<div style="height:16px;flex:none"></div>
-<div id="info" onclick="toggleLog()"><span id="infot">connecting...</span><span class="lb">Log</span></div>
 <div id="logo" class="overlay hidden" onclick="if(event.target===this)toggleLog()"><div class="panel logp">
   <h2>Log</h2><div class="small">what the computer printed, newest at the bottom</div><div id="logl"></div>
   <button onclick="toggleLog()">Close</button></div></div>

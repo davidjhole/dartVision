@@ -9,6 +9,7 @@ Newest first. The update checker shows the section for the version you're updati
   camera's view can be swapped for any other: **Can't see it**, or tap a point on the little board;
   4 points minimum, more for a better fit. Points on the very edge of the picture are flagged.
 - The **Voice** button no longer floats over every screen: it sits on the start and game screens and in Settings.
+- The phone page's messages bar is gone: the latest message and the full **Log** are in **Settings**.
 - **Settings** screen on the web page: set up cameras, calibrate, test the 180 flash, the version,
   **Restart and update** and **Reboot the Pi**. The start screen only has the game.
 - Games are locked until every camera is set up and calibrated (web page and window).

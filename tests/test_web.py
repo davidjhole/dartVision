@@ -212,7 +212,7 @@ def test_page_has_voice_button_and_flash():
 
 def test_page_has_the_info_bar_and_log(base):
     body = get(base, "/")[2]
-    assert b'id="info"' in body and b'id="logl"' in body and b"renderLog" in body
+    assert b'id="infot"' in body and b'id="logl"' in body and b"renderLog" in body
 
 
 def test_log_lines_reach_the_phone(base):
