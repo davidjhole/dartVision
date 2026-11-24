@@ -22,6 +22,23 @@ from .config import load_config, save_config, load_calibration
 
 TILE_W, TILE_H = 640, 360
 UPDATE = {}   # filled in by the background update check
+
+
+def _version():
+    """'v0.1.1 (abc1234, 24 Nov)': the package version plus the git commit, which is what updates move."""
+    from . import __version__
+    v = f"v{__version__}"
+    try:
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        r = subprocess.run(["git", "-C", root, "log", "-1", "--date=format:%d %b %Y", "--format=%h, %ad"], capture_output=True,
+                           text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            v += f" ({r.stdout.strip()})"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return v
+
 GREEN, YELLOW, RED, WHITE, GREY = (0, 220, 0), (0, 255, 255), (0, 0, 255), (255, 255, 255), (150, 150, 150)
 
 
@@ -324,8 +341,22 @@ def cmd_play(args):
         except Exception as e:  # noqa
             print("couldn't save the result:", e)
 
+    def ready():
+        """Games can only start once every camera is set up and calibrated."""
+        return bool(cams) and all(c.name in cals for c in cams)
+
+    def not_ready_reason():
+        if not cams:
+            return "No cameras set up yet - open Settings on the phone page (Set up cameras)"
+        left = [c.name for c in cams if c.name not in cals]
+        return f"Calibrate {', '.join(left)} first - Settings, Calibrate cameras (phone page or  python -m dartvision calibrate)"
+
     def start_game():
         nonlocal game, screen, status, marks, turn_recs, last, started
+        if not ready():
+            status = not_ready_reason()
+            print(status)
+            return
         game = menu.new_game()
         screen, status, marks, turn_recs, last = "play", f"{game.player} to throw", [], [], {}
         started = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -460,6 +491,26 @@ def cmd_play(args):
     def setup_mode():
         return camsetup is not None and camsetup.active
 
+    def restart_or_reboot(t):
+        """Settings page: start dartvision again (the update-on-start then installs any new version),
+        or reboot the whole computer (the service starts it again, updating the same way)."""
+        nonlocal want
+        if screen != "menu":
+            return                          # never in the middle of a game
+        if t == "reboot":
+            import subprocess
+            print("Rebooting the computer ...")
+            for cmd in (["sudo", "-n", "reboot"], ["systemctl", "reboot"]):
+                try:
+                    if subprocess.run(cmd, capture_output=True, timeout=20).returncode == 0:
+                        want = "exit"
+                        return
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+            logbuf.error("couldn't reboot (it needs sudo without a password) - restarting dartvision instead")
+        print("Restarting dartvision (checks for an update first) ...")
+        want = "restart"
+
     def act(a):
         """One user action, from a key, a click or the web page."""
         nonlocal screen, status, marks, last, show_cams, typing
@@ -474,6 +525,9 @@ def cmd_play(args):
             return
         if t == "test_flash":
             test_flash()
+            return
+        if t in ("restart", "reboot"):
+            restart_or_reboot(t)
             return
         if screen == "menu":
             if menu.act(a) == "start":
@@ -516,7 +570,9 @@ def cmd_play(args):
     def web_state():
         common = {"log": logbuf.for_web(), "calls": calls, "web_voice": bool(vcfg["enabled"]) and vout != "computer",
                   "can_calibrate": bool(cams), "uncalibrated": [c.name for c in cams if c.name not in cals],
-                  "can_setup": camsetup is not None, "no_cameras": not cams, "setup_note": setup_note}
+                  "can_setup": camsetup is not None, "no_cameras": not cams, "setup_note": setup_note,
+                  "ready": ready(), "not_ready": "" if ready() else not_ready_reason(),
+                  "version": version, "can_reboot": sys.platform.startswith("linux")}
         if setup_mode():
             return {"screen": "setup", "status": status, "setup": camsetup.state(), **common}
         if screen == "menu":
@@ -535,6 +591,8 @@ def cmd_play(args):
 
     url = None
     camsetup, setup_scan, setup_note = None, False, ""
+    want = None                     # "restart" / "exit": leave the loop (settings page buttons)
+    version = _version()
     if not args.no_web:
         from . import web
         url = web.start(args.port)
@@ -557,6 +615,8 @@ def cmd_play(args):
                     act(a)
                 except Exception as e:  # noqa - a bad tap mustn't stop the game
                     logbuf.error(f"phone action {a.get('type')} failed", e)
+        if want:
+            break
         frames = grab(cams)
         ev = tracker.update(frames) if cals else None
         if ev and screen == "play":
@@ -740,7 +800,19 @@ def cmd_play(args):
             act({"type": named[k]})
     for c in cams:
         c.close()
-    cv2.destroyAllWindows()
+    if not headless:
+        try:
+            cv2.destroyAllWindows()
+        except cv2.error:
+            pass
+    if want == "restart":
+        if url:
+            web.announce_stop()
+            web.stop()
+        sys.stdout.flush(); sys.stderr.flush()
+        os.execv(sys.executable, [sys.executable, "-m", "dartvision", *sys.argv[1:]])
+    if want == "exit":
+        return
     offer_update(cfg)
 
 

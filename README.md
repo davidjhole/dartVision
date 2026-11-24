@@ -33,8 +33,10 @@ scripts/setup_pi.sh
 ```
 That's it. It installs what the Pi needs (including `libgl1`, which OpenCV needs and Lite leaves out), makes the
 `.venv`, installs the Python packages and starts dartvision, now and on every boot, with no screen. Then, on a phone
-or PC on the same Wi-Fi, open **`http://dartvision.local:8080`** and in the menu tap **Set up cameras** (2. below),
+or PC on the same Wi-Fi, open **`http://dartvision.local:8080`**, tap **Settings**, then **Set up cameras** (2. below),
 then **Calibrate cameras** (3. below; easier on a PC). Nothing else is needed on the Pi.
+Games stay locked until every camera is calibrated. **Settings** also shows the version and has
+**Restart and update** and **Reboot the Pi** (both install a newer version from GitHub first, if there is one).
 - Log: `journalctl --user -u dartvision -f`. Stop / start: `systemctl --user stop dartvision` / `start`
   (stop it before running `setup`, `calibrate` or `preview` in a terminal: only one program can use the cameras).
 - `scripts/setup_pi.sh remove` stops it starting on boot.
@@ -70,18 +72,22 @@ Set `exposure:` to a number once lighting is final, so the picture doesn't chang
 ```
 python -m dartvision play
 ```
-open the address it prints (e.g. `http://192.168.1.40:8080`) in a browser on the same Wi-Fi and tap
-**Calibrate cameras** under Start in the menu. (Only want to calibrate? `python -m dartvision calibrate --web`
+open the address it prints (e.g. `http://192.168.1.40:8080`) in a browser on the same Wi-Fi, tap
+**Settings**, then **Calibrate cameras**. (Only want to calibrate? `python -m dartvision calibrate --web`
 serves just the calibration page; on a Pi with no screen `calibrate` does that by itself.)
 
-For each camera, tap on its picture, in order: **1** the bull centre, then where a wire meets the
-**outer edge of the double ring**: **2** between 20 and 1, **3** between 6 and 10, **4** between 3 and 19,
-**5** between 11 and 14. The little board shows which point is next.
-- **+ / −** zoom the picture (it starts at 2x on a phone); drag the picture to move around.
+For each camera, tap on its picture: **1** the bull centre, then where a wire meets the
+**outer edge of the double ring**: normally **2** between 20 and 1, **3** between 6 and 10, **4** between 3 and 19,
+**5** between 11 and 14. The little board shows which point is next (yellow) and which are done (green, numbered).
+- **A point isn't in the picture?** (common with a low camera that sees the board side-on) Tap **Can't see it**,
+  or tap any other wire point on the little board and place that one instead. Any 4 work; 5 or more
+  are better (the 5th lets it check the fit), and spread out round the board is best.
+  Don't put a point on the edge of the picture as a guess: it bends the whole fit (it's shown red).
+- **+ / −** zoom the picture (it starts at 2x on a phone; 1x shows the whole picture); drag it to move around.
 - **Drag a point** to nudge it: it moves slower than your finger, and a magnifier shows the exact spot.
-- When all 5 are placed, green wires are drawn over the picture with the fit error. Nudge points until
+- Once 4 are placed, green wires are drawn over the picture (with the fit error from 5 points). Nudge points until
   the green wires sit exactly on the real wires, then **Save**; it moves on to the next camera.
-- **New picture** takes a fresh still from the camera, **Undo** / **Reset** remove points.
+- **New picture** takes a fresh still from the camera, **Undo** removes the last point.
 
 It's used straight away – no restart – and the menu warns while a camera isn't calibrated yet.
 The picture is a still, so it doesn't matter if someone walks past while you're tapping.
@@ -113,8 +119,7 @@ Wrong dart? **Click it** (or press **1**, **2**, **3**, or **C** for the last on
 Open it on any phone, iPad or TV browser on the same Wi-Fi: it shows the scores and the board, and
 you can set up the game, tap a dart to correct it, undo, add a miss and say the darts are out.
 On a Pi with no screen it runs like that automatically (or use `play --headless`), and cameras are
-calibrated from the same page (**Calibrate cameras** in the menu), so a headless Pi never needs VNC:
-SSH in to run `setup` once, then everything else happens on the phone.
+set up and calibrated from the same page (**Settings**), so a headless Pi never needs VNC.
 `--port 8090` changes the port, `--no-web` turns it off.
 
 ### The caller (voice) and 180 flash
@@ -122,7 +127,7 @@ After each turn the score is called out like a darts caller: "One hundred and ei
 "Bust", "Dave, you require 40", "Game shot, and the leg!". It speaks on the computer running
 dartvision (on a Pi plugged into the TV with HDMI, it comes out of the TV; on a Pi / Linux install a
 voice once with `sudo apt install espeak-ng`). To hear it from a **phone, iPad or TV browser** instead,
-tap **Voice off** at the top right of the web page so it says **Voice on** (the tap is needed so the
+tap **Voice off** (on the start and game screens, and in Settings) so it says **Voice on** (the tap is needed so the
 browser allows sound). While a page has its voice on, the computer stays quiet so you don't hear it twice.
 Choose with `voice: output:` in `config.yaml`: `auto` (that), `computer`, `web` or `both`; `enabled: false` turns it off.
 
@@ -133,7 +138,7 @@ A **180** flashes the screen and the web page. It can flash the light too, set i
 - **Smart plug / Wi-Fi controller** (Shelly, Tasmota, WLED...): `type: http`, `on_url:` and `off_url:`.
 - **Anything else**: `type: command`, `on_cmd:` and `off_cmd:`.
 
-To try it without throwing a 180, press **Test 180 flash** on the start screen (window or web page):
+To try it without throwing a 180, press **Test 180 flash** (on the window's start screen, or in **Settings** on the web page):
 it flashes the light, the screen and the page and calls "One hundred and eighty!".
 
 ## 5. Improve accuracy with your own throws

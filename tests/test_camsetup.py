@@ -180,8 +180,10 @@ def test_play_starts_with_no_cameras_and_opens_camera_setup(tmp_path):
         act({"type": "setup_cancel"})
         s = wait(lambda s: s.get("screen") == "menu")
         assert s["setup_note"] == "Nothing changed"
-        act({"type": "start"})                     # a game can still be played, scored by hand
-        wait(lambda s: s.get("screen") == "play")
+        assert s["ready"] is False and s["not_ready"]
+        act({"type": "start"})                     # games stay locked until cameras are set up + calibrated
+        s = wait(lambda s: s.get("status", "").startswith("No cameras"))
+        assert s["screen"] == "menu"
         assert p.poll() is None
     finally:
         p.terminate()
