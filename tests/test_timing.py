@@ -89,9 +89,9 @@ def test_recordings_stay_under_the_size_limit(tmp_path):
         d.mkdir(parents=True)
         (d / "cam1_after.jpg").write_bytes(b"x" * 1_000_000)
     rec = Recorder(str(root), calib_folder=str(tmp_path / "nope"), max_mb=2.5, background=False)
-    left = sorted(p.name for p in root.iterdir())
-    assert "session_20260100_120000" not in left and "session_20260102_120000" in left   # oldest went
-    assert os.path.basename(rec.dir) in left
+    assert not (root / "session_20260100_120000" / "throw_0000").exists()     # oldest went
+    assert (root / "session_20260102_120000" / "throw_0000").exists()
+    assert os.path.isdir(rec.dir)
     img = np.random.default_rng(0).integers(0, 255, (72, 128, 3), np.uint8)
     d = rec.save({"cam1": img}, {"cam1": img}, {"type": "DART", "label": "T20"})
     rec.flush()
@@ -105,3 +105,17 @@ def test_recorder_png_still_works(tmp_path):
     img = np.full((8, 8, 3), 50, np.uint8)
     d = rec.save({"cam1": img}, {"cam1": img}, {"type": "DART"})
     assert "cam1_after.png" in os.listdir(d)
+
+
+def test_corrected_darts_are_kept_longest(tmp_path):
+    root = tmp_path / "rec"
+    for i in range(3):
+        d = root / f"session_2026010{i}_120000" / "throw_0000"
+        d.mkdir(parents=True)
+        (d / "cam1_after.jpg").write_bytes(b"x" * 1_000_000)
+        src = "corrected" if i == 0 else "accepted"
+        (d / "meta.json").write_text(json.dumps({"type": "DART", "label_source": src}))
+    Recorder(str(root), calib_folder=str(tmp_path / "nope"), max_mb=1.5, background=False)
+    assert (root / "session_20260100_120000" / "throw_0000").exists()       # the corrected one stays
+    assert not (root / "session_20260101_120000" / "throw_0000").exists()
+    assert not (root / "session_20260102_120000" / "throw_0000").exists()

@@ -380,12 +380,19 @@ def cmd_play(args):
         print(f"Game on: {getattr(game, 'mode_title', game.name)} - {', '.join(players)}"
               + (f"   recording to {rec.dir}" if rec else ""))
 
+    def kept(d):
+        """A throw's recording folder, saving it now if its pictures were only held in memory
+        (record: save: unknown keeps a turn's darts in memory, and saves one if it's corrected)."""
+        if isinstance(d, tuple) and d and d[0] == "held":
+            return rec.save(*d[1:]) if rec else None
+        return d
+
     def end_turn():
         nonlocal turn_recs
         for d in turn_recs:
-            if d:
+            if isinstance(d, str):
                 accept_if_unlabelled(d)      # not corrected = it was right
-        turn_recs = []
+        turn_recs = []                       # darts held in memory and not corrected: let them go
 
     def finish_leg():
         """Leg won and acknowledged (Enter / darts pulled): next leg, or back to the menu."""
@@ -432,6 +439,7 @@ def cmd_play(args):
         else:
             game.set_dart(i, lab, pts)
             if i < len(turn_recs) and turn_recs[i]:
+                turn_recs[i] = kept(turn_recs[i])
                 set_label(turn_recs[i], lab, "corrected")
             if i < len(marks) and marks[i]:
                 marks[i] = (marks[i][0], marks[i][1], lab)
@@ -555,7 +563,7 @@ def cmd_play(args):
                 set_dart_label(i, str(a.get("label", "")))
         elif t == "undo":
             if turn_recs:
-                d = turn_recs.pop()
+                d = kept(turn_recs.pop())
                 if d:
                     set_label(d, "FALSE", "undone")      # remember it as a false detection
             if marks:
@@ -664,6 +672,8 @@ def cmd_play(args):
                     status = f"{ev['label']} ({ev['points']})  from {ev['cams_used']} cam(s)"
                     if res == "bust":
                         status += "  BUST"
+                    if saved is None and rec:            # save: unknown - keep it in case it's corrected
+                        saved = ("held", ev["before_raw"], frames, ev)
                     turn_recs.append(saved)
                     marks.append((ev["pos_mm"][0], ev["pos_mm"][1], ev["label"]))
                 last = {n: r for n, r in ev["cams"].items() if r.get("ok")}

@@ -153,8 +153,9 @@ by the time the darts are pulled is taken as correct. So normal play builds the 
 
 With 4 cameras a throw takes about 2 MB (JPEG), so a 501 leg is roughly 50–100 MB. The oldest
 recordings are deleted to keep them under 2 GB. Change that with `record:` in `config.yaml`:
-`max_mb` sets the limit, `save: unknown` keeps only the darts it couldn't read, and `save: off`
-keeps none.
+`max_mb` sets the limit, `save: unknown` keeps only the darts it got wrong (couldn't read, or you
+corrected, typed in or undid), and `save: off` keeps none. Those darts are also the last to be
+deleted when the limit is reached.
 
 ```
 python -m dartvision label  recordings/session_XXXX    # optional: review/label throws by hand

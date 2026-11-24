@@ -23,7 +23,7 @@ DEFAULT = {
     },
     "record_dir": "recordings",
     "record": {
-        "save": "all",             # all | unknown (only darts it couldn't read) | off
+        "save": "all",             # all | unknown (only darts it couldn't read, or you corrected / undid) | off
         "format": "jpg",           # jpg (~2 MB a dart) | png (~13 MB a dart, slow on a Pi's SD card)
         "max_mb": 2000,            # keep the recordings under this: the oldest are deleted (0 = no limit)
     },

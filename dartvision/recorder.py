@@ -80,36 +80,58 @@ class Recorder:
             self.cleanup()
 
     def cleanup(self):
-        """Keep the recordings under max_mb: delete the oldest sessions first (then, if this
-        session alone is too big, its oldest throws, keeping the last 20)."""
+        """Keep the recordings under max_mb. The darts you corrected, typed in or undid are the
+        useful ones (the ones it got wrong), so they're kept longest: first the other throws go,
+        oldest session first, then whole sessions, oldest first. This session is only trimmed if
+        it alone is too big (keeping its last 20 throws)."""
         if not self.max_bytes:
             return
         try:
-            sessions = sorted(glob.glob(os.path.join(self.root, "session_*")))
+            me = os.path.abspath(self.dir)
+            sessions = [d for d in sorted(glob.glob(os.path.join(self.root, "session_*")))]
             sizes = {d: _size(d) for d in sessions}
             total = sum(sizes.values())
             freed = []
-            for d in sessions:
-                if total <= self.max_bytes:
-                    break
-                if os.path.abspath(d) == os.path.abspath(self.dir):
-                    continue
-                shutil.rmtree(d, ignore_errors=True)
-                total -= sizes[d]
-                freed.append(os.path.basename(d))
-            if total > self.max_bytes:
-                for d in sorted(glob.glob(os.path.join(self.dir, "throw_*")))[:-20]:
+
+            def drop(path, size):
+                nonlocal total
+                shutil.rmtree(path, ignore_errors=True)
+                total -= size
+                freed.append(os.path.relpath(path, self.root))
+
+            old = [d for d in sessions if os.path.abspath(d) != me]
+            for d in old:                                    # 1. throws nobody corrected
+                for t in sorted(glob.glob(os.path.join(d, "throw_*"))):
                     if total <= self.max_bytes:
                         break
-                    sz = _size(d)
-                    shutil.rmtree(d, ignore_errors=True)
-                    total -= sz
-                    freed.append(f"{os.path.basename(self.dir)}/{os.path.basename(d)}")
+                    if not _useful(t):
+                        drop(t, _size(t))
+            for d in old:                                    # 2. whole sessions
+                if total <= self.max_bytes:
+                    break
+                if os.path.isdir(d):
+                    drop(d, _size(d))
+            if total > self.max_bytes:                       # 3. this session's oldest throws
+                mine = sorted(glob.glob(os.path.join(self.dir, "throw_*")))[:-20]
+                for t in [t for t in mine if not _useful(t)] + [t for t in mine if _useful(t)]:
+                    if total <= self.max_bytes:
+                        break
+                    drop(t, _size(t))
             if freed:
                 print(f"recorder: recordings over {self.max_bytes / 1e6:.0f} MB - deleted the oldest: "
                       + ", ".join(freed[:5]) + (f" and {len(freed) - 5} more" if len(freed) > 5 else ""))
         except Exception as e:  # noqa
             print("recorder: couldn't tidy up old recordings:", e)
+
+
+def _useful(throw_dir):
+    """A throw it got wrong or couldn't read (you corrected, typed in or undid it)."""
+    try:
+        with open(os.path.join(throw_dir, "meta.json")) as f:
+            m = json.load(f)
+        return m.get("label_source") in ("corrected", "entered", "undone") or m.get("type") == "UNKNOWN"
+    except Exception:  # noqa
+        return False
 
 
 def _size(path):
