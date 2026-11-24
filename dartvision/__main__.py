@@ -620,9 +620,11 @@ def cmd_play(args):
         print("Running without a screen - use the web page. Ctrl+C to stop.")
 
     running = False
+    last_pub, web_dirty = 0.0, False
     while True:
         if url:
             for a in web.take_actions():
+                web_dirty = True
                 try:
                     act(a)
                 except Exception as e:  # noqa - a bad tap mustn't stop the game
@@ -630,10 +632,18 @@ def cmd_play(args):
         if want:
             break
         pace.loop_start()
-        frames = grab(cams)
         # only new pictures count: the same frame twice would look "quiet" and end the wait too soon
         fresh = pace.fresh(cams)
-        ev = tracker.update(frames) if cals and fresh else None
+        if fresh or not headless:
+            frames = grab(cams)          # copying 4 full pictures each pass kept a Pi busy (and hot)
+        playing = screen == "play" and bool(cals)
+        ev = tracker.update(frames) if playing and fresh else None
+        # waiting for a dart: every other picture is enough to notice one (it stays on the board);
+        # in the menu a few a second. Each picture skipped is one less to decode - most of the
+        # Pi's work. Every picture is used once something moves.
+        skip = 1 if playing and tracker.state != "IDLE" else 2 if playing else 5
+        for c in cams:
+            c.decode_every = skip
         if ev and screen == "play":
             t_save = time.monotonic()
             saved = rec.save(ev["before_raw"], frames, ev) if rec and ev["type"] in ("DART", "UNKNOWN") else None
@@ -669,7 +679,9 @@ def cmd_play(args):
                     open_entry("pending", "Couldn't read that dart - what was it?")
 
         run_caller()
-        if url:
+        now_pub = time.monotonic()
+        if url and (ev or now_pub - last_pub >= 0.1 or web_dirty):
+            last_pub, web_dirty = now_pub, False
             web.publish(web_state())
             if setup_scan:
                 setup_scan = False
@@ -681,7 +693,7 @@ def cmd_play(args):
                 from . import autoupdate
                 autoupdate.started_ok()          # made it into the game loop: keep this version
         if headless:
-            time.sleep(0.005 if cams else 0.05)
+            time.sleep(0.01 if cams else 0.05)
             continue
         W, H_win = ui.window_size(WIN)
         bar_h = ui.info_bar_height(H_win)

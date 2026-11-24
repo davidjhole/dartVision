@@ -48,3 +48,34 @@ def test_recorder_writes_pictures_in_background(tmp_path):
     assert sorted(os.listdir(d)) == ["cam1_after.png", "cam1_before.png", "meta.json"]
     with open(os.path.join(d, "meta.json")) as f:
         assert json.load(f)["true_label"] == "T19"
+
+
+def test_camera_skips_decoding_unneeded_pictures():
+    """Waiting for a dart, only every n-th picture is decoded (the expensive part on a Pi)."""
+    import threading
+    from dartvision.cameras import Camera
+
+    class FakeCap:
+        def __init__(self):
+            self.grabs = self.decodes = 0
+
+        def grab(self):
+            self.grabs += 1
+            time.sleep(0.001)
+            return True
+
+        def retrieve(self):
+            self.decodes += 1
+            return True, np.zeros((4, 4, 3), np.uint8)
+
+    cam = Camera.__new__(Camera)
+    cam.name, cam.rotate, cam.frame, cam.stamp, cam.count, cam.grabbed = "cam1", 0, None, 0.0, 0, 0
+    cam.decode_every, cam._lock, cam._run, cam._gen = 3, threading.Lock(), True, 1
+    cap = FakeCap()
+    t = threading.Thread(target=cam._loop, args=(1, cap), daemon=True)
+    t.start()
+    time.sleep(0.3)
+    cam._run = False
+    t.join(1)
+    assert cap.grabs > 30 and cam.grabbed == cap.grabs
+    assert cap.decodes == cam.count and abs(cap.decodes - cap.grabs / 3) <= 2

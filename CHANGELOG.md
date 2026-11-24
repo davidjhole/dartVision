@@ -3,6 +3,10 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- **Much less work (and heat) while waiting for a dart.** Only every other camera picture is decoded
+  while waiting for a throw, and one in five on the menu. Every picture is used again as soon as
+  something moves. The main loop no longer copies all the camera pictures when none of them is new,
+  and the phone page's state is refreshed 10 times a second, not 200.
 - **Faster again on a Pi:** finding a dart is about 2.5x quicker and a pull-out about 4x. The
   cameras are worked on side by side, each change picture is made once and reused, and only the part
   of the picture around the board is used.

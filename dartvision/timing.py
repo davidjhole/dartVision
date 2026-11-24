@@ -42,9 +42,10 @@ class Pace:
             self._seen = {c.name: c.count for c in cams}
         now = time.monotonic()
         for c in cams:
-            t, n, fps = self._fps.get(c.name, (now, c.count, 0.0))
+            got = getattr(c, "grabbed", c.count)     # what the camera sends, decoded or not
+            t, n, fps = self._fps.get(c.name, (now, got, 0.0))
             if now - t >= 2.0:
-                self._fps[c.name] = (now, c.count, (c.count - n) / (now - t))
+                self._fps[c.name] = (now, got, (got - n) / (now - t))
             elif c.name not in self._fps:
                 self._fps[c.name] = (t, n, fps)
         return new
