@@ -72,7 +72,7 @@ def test_lists_cameras_and_targets(base):
     d = json.loads(b)
     assert [c["name"] for c in d["cameras"]] == ["cam1", "cam2"]
     assert all(c["saved"] is None and c["size"] == [1280, 720] for c in d["cameras"])
-    assert len(d["targets"]) == 5 and d["targets"][0]["mm"] == [0, 0]
+    assert len(d["targets"]) == 21 and d["targets"][0]["mm"] == [0, 0] and d["default"] == [0, 1, 6, 11, 16]
 
 
 def test_frame_is_a_jpeg(base):
@@ -121,3 +121,46 @@ def test_off_without_a_calibrator():
 
 def test_page_has_calibration_screen():
     assert "Calibrate cameras" in web.PAGE and "/calib/save" in web.PAGE
+
+
+# ------------------------------------------------------------ choosing other points
+def _truth(cam, targets):
+    from dartvision.calibrate import WEB_TARGETS
+    return board.board_to_image([WEB_TARGETS[t][1] for t in targets], cam.H).tolist()
+
+
+def test_other_wire_points_when_one_is_out_of_view(base, cams, tmp_path):
+    """From a low camera one of the usual wire points can be outside the picture: any of the 20
+    wire points can stand in for it (here 3/19 is swapped for the wire between 17 and 3)."""
+    from dartvision.calibrate import WEB_TARGETS, DEFAULT_TARGETS
+    swap = [i for i, (n, _) in enumerate(WEB_TARGETS) if n.endswith("between 17 and 3")][0]
+    targets = [t for t in DEFAULT_TARGETS if t != DEFAULT_TARGETS[3]] + [swap]
+    pts = _truth(cams[0], targets)
+    code, d = post(base, "/calib/preview", {"cam": "cam1", "points": pts, "targets": targets})
+    assert code == 200 and d["err"] < 0.5 and d["checked"]
+    code, d = post(base, "/calib/save", {"cam": "cam1", "points": pts, "targets": targets})
+    assert code == 200
+    cal = load_calibration("cam1", str(tmp_path))
+    assert np.allclose(cal["H"] / cal["H"][2, 2], cams[0].H / cams[0].H[2, 2], rtol=1e-3, atol=1e-3)
+    d = json.loads(get(base, "/calib/cams")[2])["cameras"][0]
+    assert d["point_targets"] == targets and np.allclose(d["points"], pts)
+
+
+def test_more_points_and_four_points(base, cams):
+    targets = [0] + list(range(1, 21, 2))
+    code, d = post(base, "/calib/preview", {"cam": "cam2", "points": _truth(cams[1], targets), "targets": targets})
+    assert code == 200 and d["err"] < 0.5
+    code, d = post(base, "/calib/preview", {"cam": "cam2", "points": _truth(cams[1], [0, 1, 6, 11]),
+                                            "targets": [0, 1, 6, 11]})
+    assert code == 200 and not d["checked"]          # 4 points always fit exactly: nothing to check
+
+
+@pytest.mark.parametrize("body", [
+    {"cam": "cam1", "points": [[1, 2]] * 3, "targets": [0, 1, 2]},             # too few
+    {"cam": "cam1", "points": [[1, 2], [3, 4], [5, 6], [7, 8], [9, 9]], "targets": [0, 1, 1, 2, 3]},  # twice
+    {"cam": "cam1", "points": [[1, 2]] * 5, "targets": [0, 1, 2, 3, 99]},      # no such point
+    {"cam": "cam1", "points": [[1, 2]] * 5, "targets": [0, 1, 2]},             # don't match up
+])
+def test_bad_targets_are_refused(base, body):
+    code, d = post(base, "/calib/save", body)
+    assert code == 400 and not d["ok"]

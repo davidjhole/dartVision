@@ -55,8 +55,9 @@ def calibrate_camera(cam, folder="calib"):
     n_pts = len(board.CALIB_POINTS)
     existing = load_calibration(cam.name, folder)
     pts = [None] * n_pts
-    if existing:
-        pts = [tuple(p) for p in existing["image_points"]]
+    bp = existing.get("board_points_mm") if existing else None
+    if bp and len(bp) == n_pts and np.allclose(bp, [p for _, p in board.CALIB_POINTS], atol=0.5):
+        pts = [tuple(p) for p in existing["image_points"]]     # (saved from the page with other points: start fresh)
     state = {"mouse": (0, 0), "drag": None, "frozen": None}
 
     def on_mouse(ev, x, y, flags, _):
@@ -148,10 +149,37 @@ def wire_lines(H):
     return [[[round(float(x), 1), round(float(y), 1)] for x, y in line] for line in out]
 
 
+def web_targets():
+    """Points the page can ask for: the bull, then where each of the 20 sector wires meets the outer
+    edge of the double ring (clockwise from the wire between 20 and 1). The page suggests the usual
+    four (CALIB_POINTS), but any of them can be used: from a low camera one of the usual four can be
+    out of the picture."""
+    out = [("bull centre", (0.0, 0.0))]
+    for i in range(20):
+        left, right = board.SECTORS[i], board.SECTORS[(i + 1) % 20]
+        a = np.radians(board.sector_boundary_angle(left, right))
+        out.append((f"outer double wire between {left} and {right}",
+                    (board.R_DOUBLE_OUT * np.cos(a), board.R_DOUBLE_OUT * np.sin(a))))
+    return out
+
+
+WEB_TARGETS = web_targets()
+
+
+def _target_index(mm):
+    d = [np.hypot(p[0] - mm[0], p[1] - mm[1]) for _, p in WEB_TARGETS]
+    i = int(np.argmin(d))
+    return i if d[i] < 0.5 else None
+
+
+DEFAULT_TARGETS = [_target_index(p) for _, p in board.CALIB_POINTS]
+MIN_POINTS = 4
+
+
 class WebCalibrator:
     """Calibration through the phone / PC web page instead of a window on the computer, so a Pi
     with no screen can be calibrated without VNC. The page fetches a still picture from each
-    camera, you tap the 5 points on it, and it sends them back here to check and save.
+    camera, you tap the points on it (at least 4, normally 5) and it sends them back here to check and save.
 
     Called from the web server's threads; Camera.read() is thread-safe and returns a copy.
     """
@@ -166,12 +194,19 @@ class WebCalibrator:
         out = []
         for n in self.order:
             cal = load_calibration(n, self.folder)
+            pts = tg = None
+            if cal:
+                tg = [_target_index(p) for p in cal.get("board_points_mm", [])]
+                if None in tg or len(tg) != len(cal["image_points"]):
+                    tg = None
+                else:
+                    pts = cal["image_points"]
             out.append({"name": n, "size": list(self.cams[n].size),
                         "saved": cal["saved"] if cal else None,
                         "image_size": cal.get("image_size") if cal else None,
-                        "points": cal["image_points"] if cal else None})
-        return {"cameras": out,
-                "targets": [{"name": t, "mm": [round(p[0], 2), round(p[1], 2)]} for t, p in board.CALIB_POINTS]}
+                        "points": pts, "point_targets": tg})
+        return {"cameras": out, "default": DEFAULT_TARGETS, "min": MIN_POINTS,
+                "targets": [{"name": t, "mm": [round(float(p[0]), 2), round(float(p[1]), 2)]} for t, p in WEB_TARGETS]}
 
     def frame_jpeg(self, name, quality=88):
         cam = self.cams.get(name)
@@ -181,28 +216,40 @@ class WebCalibrator:
         ok, buf = cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, quality])
         return buf.tobytes() if ok else None
 
-    def _points(self, name, points):
+    def _points(self, name, points, targets=None):
+        """Check what the page sent. Returns (image points, board points in mm)."""
         if name not in self.cams:
             raise ValueError(f"no camera called {name!r}")
-        n = len(board.CALIB_POINTS)
         try:
             pts = [(float(p[0]), float(p[1])) for p in points]
-        except (TypeError, ValueError, IndexError):
+        except (TypeError, ValueError, IndexError, KeyError):
             raise ValueError("points must be [x, y] pairs")
-        if len(pts) != n or not all(np.isfinite(pts).all(axis=1)):
-            raise ValueError(f"need all {n} points")
-        return pts
+        if targets is None:                       # the original page: the usual 5, in order
+            targets = DEFAULT_TARGETS[:len(pts)]
+        try:
+            targets = [int(t) for t in targets]
+        except (TypeError, ValueError):
+            raise ValueError("targets must be numbers")
+        if len(targets) != len(pts) or any(not 0 <= t < len(WEB_TARGETS) for t in targets):
+            raise ValueError("each point needs a target")
+        if len(set(targets)) != len(targets):
+            raise ValueError("the same point is used twice")
+        if len(pts) < MIN_POINTS:
+            raise ValueError(f"need at least {MIN_POINTS} points")
+        if not np.isfinite(pts).all():
+            raise ValueError("points must be numbers")
+        return pts, [WEB_TARGETS[t][1] for t in targets]
 
-    def preview(self, name, points):
+    def preview(self, name, points, targets=None):
         """Fit the points without saving: fit error + wire overlay to draw."""
-        pts = self._points(name, points)
-        H, err = compute_homography(pts, [p for _, p in board.CALIB_POINTS])
-        return {"ok": True, "err": round(err, 2), "lines": wire_lines(H)}
+        pts, mm = self._points(name, points, targets)
+        H, err = compute_homography(pts, mm)
+        return {"ok": True, "err": round(err, 2), "lines": wire_lines(H), "checked": len(pts) > MIN_POINTS}
 
-    def save(self, name, points):
-        pts = self._points(name, points)
-        H, err = compute_homography(pts, [p for _, p in board.CALIB_POINTS])
-        save_calibration(name, pts, [p for _, p in board.CALIB_POINTS], H, self.cams[name].size, self.folder)
+    def save(self, name, points, targets=None):
+        pts, mm = self._points(name, points, targets)
+        H, err = compute_homography(pts, mm)
+        save_calibration(name, pts, mm, H, self.cams[name].size, self.folder)
         print(f"saved calibration for {name} from the web page (fit error {err:.2f}px)")
         if self.on_saved:
             self.on_saved(name)
