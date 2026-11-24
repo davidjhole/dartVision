@@ -407,11 +407,11 @@ def cmd_play(args):
         """One user action, from a key, a click or the web page."""
         nonlocal screen, status, marks, last, show_cams, typing
         t = a.get("type")
-        if t == "test_flash":
-            test_flash()
-            return
         if t == "calibrated":
             recalibrated(str(a.get("cam", "")))
+            return
+        if t == "test_flash":
+            test_flash()
             return
         if screen == "menu":
             if menu.act(a) == "start":
