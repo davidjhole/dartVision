@@ -800,7 +800,11 @@ def cmd_play(args):
             act({"type": named[k]})
     for c in cams:
         c.close()
-    cv2.destroyAllWindows()
+    if not headless:
+        try:
+            cv2.destroyAllWindows()
+        except cv2.error:
+            pass
     if want == "restart":
         if url:
             web.announce_stop()
