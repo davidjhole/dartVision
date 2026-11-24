@@ -3,6 +3,10 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- **Accuracy in Settings:** how many darts it read right this session and over all saved darts
+  (from the labels made while playing - corrections, typed-in and undone darts; nothing is re-run),
+  and **Darts it got wrong**: each one with what every camera saw before and after, and where that
+  camera put the tip. `replay` stays a command for tuning on a computer.
 - **Recordings take far less space and can't fill the card.** Throw pictures are saved as JPEG (about
   2 MB a dart with 4 cameras, down from about 13 MB as PNG; re-running detection scores the same), and
   the oldest recordings are deleted to stay under 2 GB. **On first start this deletes the oldest

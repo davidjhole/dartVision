@@ -161,6 +161,9 @@ deleted when the limit is reached.
 python -m dartvision label  recordings/session_XXXX    # optional: review/label throws by hand
 python -m dartvision replay recordings/session_XXXX    # re-run detection, prints accuracy %
 ```
+**Settings → Accuracy** on the phone page shows how many darts it read right (this session and
+all saved), and **Darts it got wrong** shows each misread dart from every camera.
+
 Change detection settings (`detection:` in `config.yaml`) or the code, then `replay` again –
 no need to throw again. This is how we'll tune it.
 

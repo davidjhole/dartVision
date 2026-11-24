@@ -626,6 +626,7 @@ def cmd_play(args):
             web.set_calibrator(WebCalibrator(cams))
             camsetup = CameraSetup(args.config)
             web.set_camsetup(camsetup)
+            web.set_recordings(cfg["record_dir"], rec.dir if rec else None, save_what)
             print(f"\nScoreboard / remote: open  {url}  on a phone, iPad or TV (same Wi-Fi)\n")
     headless = args.headless
     if headless:

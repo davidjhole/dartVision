@@ -4,6 +4,7 @@ import glob
 import json
 import os
 import queue
+import re
 import shutil
 import threading
 import time
@@ -199,3 +200,78 @@ def accept_if_unlabelled(throw_dir):
     p, meta = _meta(throw_dir)
     if "true_label" not in meta and meta.get("label"):
         set_label(throw_dir, meta["label"], "accepted")
+
+
+# ------------------------------------------------------------------ accuracy read-out (Settings)
+_SESSION = re.compile(r"^session_\d{8}_\d{6}$")
+_THROW = re.compile(r"^throw_\d{4}$")
+_CAM = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+MISREAD = ("corrected", "entered", "undone")
+
+
+def _count(rows):
+    """Totals for some throws' meta (labelled while playing; nothing is re-run)."""
+    c = {"saved": len(rows), "right": 0, "corrected": 0, "entered": 0, "false": 0, "unread": 0}
+    for m in rows:
+        src, true = m.get("label_source"), m.get("true_label")
+        if src == "undone" or true == "FALSE":
+            c["false"] += 1
+        elif src == "entered":
+            c["entered"] += 1
+        elif src == "corrected" and true != m.get("label"):
+            c["corrected"] += 1
+        elif true is not None and true == m.get("label"):
+            c["right"] += 1
+        elif m.get("type") == "UNKNOWN":
+            c["unread"] += 1
+    c["judged"] = c["right"] + c["corrected"] + c["entered"] + c["false"]
+    c["pct"] = round(100 * c["right"] / c["judged"], 1) if c["judged"] else None
+    return c
+
+
+def accuracy(root, current=None, limit=40):
+    """How well it has been reading darts, from the saved throws' labels: this session, all saved
+    sessions, and the darts it got wrong (newest first) with which cameras have pictures."""
+    sessions = sorted((d for d in glob.glob(os.path.join(root, "session_*"))
+                       if _SESSION.match(os.path.basename(d))), reverse=True)
+    rows, wrong = {}, []
+    for s in sessions:
+        name = os.path.basename(s)
+        rows[name] = []
+        for t in sorted(glob.glob(os.path.join(s, "throw_*")), reverse=True):
+            try:
+                with open(os.path.join(t, "meta.json")) as f:
+                    m = json.load(f)
+            except (OSError, ValueError):
+                continue
+            rows[name].append(m)
+            src = m.get("label_source")
+            misread = (src in MISREAD and not (src == "corrected" and m.get("true_label") == m.get("label"))
+                       or (m.get("type") == "UNKNOWN" and "true_label" not in m))
+            if len(wrong) < limit and misread:
+                pics = sorted({os.path.basename(p).rsplit("_", 1)[0]
+                               for p in glob.glob(os.path.join(t, "*_after.*"))})
+                tips = {n: r.get("tip_px") for n, r in (m.get("cams") or {}).items()
+                        if isinstance(r, dict) and r.get("ok")}
+                wrong.append({"id": f"{name}/{os.path.basename(t)}", "session": name, "time": m.get("time", ""),
+                              "read": m.get("label") or "?", "true": m.get("true_label"),
+                              "source": m.get("label_source") or "unread", "cams": pics, "tips": tips})
+    cur = os.path.basename(current) if current else None
+    return {"session": cur, "this": _count(rows.get(cur, [])) if cur else None,
+            "all": _count([m for r in rows.values() for m in r]), "sessions": len(sessions),
+            "wrong": wrong}
+
+
+def picture(root, throw_id, cam, which="after"):
+    """(bytes, content type) of one saved picture, or None. Names are checked, so a request can't
+    reach outside the recordings folder."""
+    parts = str(throw_id).split("/")
+    if (len(parts) != 2 or not _SESSION.match(parts[0]) or not _THROW.match(parts[1])
+            or not _CAM.match(str(cam)) or which not in ("before", "after")):
+        return None
+    for ext, ctype in ((".jpg", "image/jpeg"), (".png", "image/png")):
+        p = os.path.join(root, parts[0], parts[1], f"{cam}_{which}{ext}")
+        if os.path.isfile(p):
+            with open(p, "rb") as f:
+                return f.read(), ctype
+    return None
