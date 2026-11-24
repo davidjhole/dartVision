@@ -251,21 +251,33 @@ def cmd_play(args):
     lights = Lights(cfg["lights"])
     calls, call_n, flash_at = [], 0, 0.0
 
-    def run_caller():
+    def announce(text, flash=False):
+        """Say one call (computer and / or phone page) and flash the screen, page and light for a 180."""
         nonlocal call_n, flash_at
+        if flash:
+            flash_at = time.time()
+            lights.flash()
+        call_n += 1
+        calls.append({"n": call_n, "text": text, "flash": bool(flash)})
+        del calls[:-5]
+        if text and (vout in ("computer", "both") or (vout == "auto" and not (url and web.voice_listening()))):
+            speaker.say(text)
+
+    def run_caller():
         for ev in watcher.observe(game if screen == "play" else None):
-            if ev.get("flash"):
-                flash_at = time.time()
-                lights.flash()
             if not vcfg["enabled"] or (ev["kind"] == "require" and not vcfg.get("require", True)):
                 text = ""
             else:
                 text = phrase(ev)
-            call_n += 1
-            calls.append({"n": call_n, "text": text, "flash": bool(ev.get("flash"))})
-            del calls[:-5]
-            if text and (vout in ("computer", "both") or (vout == "auto" and not (url and web.voice_listening()))):
-                speaker.say(text)
+            announce(text, ev.get("flash"))
+
+    def test_flash():
+        """The 'Test 180 flash' button: the whole 180 celebration, without throwing one."""
+        if lights.enabled:
+            print("testing the 180 flash (light, screen and phone)")
+        else:
+            print("testing the 180 flash - no light set up (lights: in config.yaml), so screen and phone only")
+        announce("One hundred and eighty!" if vcfg["enabled"] else "", True)
 
     def log_result(kind, extra=None):
         try:
@@ -348,6 +360,9 @@ def cmd_play(args):
         """One user action, from a key, a click or the web page."""
         nonlocal screen, status, marks, last, show_cams, typing
         t = a.get("type")
+        if t == "test_flash":
+            test_flash()
+            return
         if screen == "menu":
             if menu.act(a) == "start":
                 start_game()
@@ -496,10 +511,10 @@ def cmd_play(args):
                     ui.draw_banner(out, f"{w} wins the leg", [
                         "legs  " + "  -  ".join(f"{p} {game.legs[p]}" for p in game.players),
                         "pull the darts out or press Enter for the next leg"])
-            if time.time() - flash_at < 3.0:
-                ui.draw_flash(out, time.time() - flash_at)
             if entry is not None:
                 _draw_entry_box(out, entry_title, entry)
+        if time.time() - flash_at < 3.0:
+            ui.draw_flash(out, time.time() - flash_at)
         if show_log:
             ui.draw_log_panel(out, logbuf.lines())
         out = np.vstack([out, ui.draw_info_bar(W, bar_h, logbuf.last(), show_log)])
@@ -531,6 +546,8 @@ def cmd_play(args):
                     sel_row = add_row
                 elif hit == "start":
                     act({"type": "start"})
+                elif hit == "test_flash":
+                    act({"type": "test_flash"})
             if k is None:
                 continue
             if k == "esc" or (k == "q" and not typing):

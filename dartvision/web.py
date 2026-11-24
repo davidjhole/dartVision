@@ -233,6 +233,8 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <div class="row"><input id="pname" placeholder="Add a player" maxlength="14" autocomplete="off">
   <button onclick="addPlayer()">Add</button></div>
   <button class="start" onclick="act({type:'start'})">Start</button>
+  <div class="sub">Light</div>
+  <button id="tflash" style="width:100%;font-weight:800;color:var(--accent)" onclick="act({type:'test_flash'})">Test 180 flash</button>
 </div>
 <div id="play" class="hidden"><div class="wrap">
   <div>
