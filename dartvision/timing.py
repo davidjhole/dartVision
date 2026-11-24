@@ -70,3 +70,8 @@ class Pace:
                 f"find {t.get('detect', 0):.2f} s" + (f" ({per})" if per else "") +
                 f", save {save_s:.2f} s = {total:.2f} s from landing to score"
                 f" | loop {self.loop_ms:.0f} ms, cameras {fps} fps{size}")
+
+    def speeds(self, cams):
+        """'cameras 30/30/29/30 fps, loop 21 ms' for the report."""
+        fps = "/".join(f"{self._fps.get(c.name, (0, 0, 0))[2]:.0f}" for c in cams) or "-"
+        return f"cameras {fps} fps, main loop {self.loop_ms:.0f} ms"

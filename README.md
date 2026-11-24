@@ -37,7 +37,14 @@ or PC on the same Wi-Fi, open **`http://dartvision.local:8080`**, tap **Settings
 then **Calibrate cameras** (3. below; easier on a PC). Nothing else is needed on the Pi.
 Games stay locked until every camera is calibrated. **Settings** also shows the version and has
 **Restart and update** and **Reboot the Pi** (both install a newer version from GitHub first, if there is one).
-- Log: `scripts/setup_pi.sh log` (add `| grep timing:` to see where the time goes for each dart).
+- **Settings > Show log** on the phone / PC page: the Pi's health at the top (temperature, whether it has
+  slowed itself down or had too little power, CPU, memory, disk), the log filtered by Problems / Timing /
+  Health, and **Copy for sharing** / **Download**: one text file with the version, settings, health and log
+  to send when asking for help.
+- dartvision watches the Pi's health itself: a `health:` line every 10 minutes and straight away when
+  something changes (`health: log_every_min:` in config.yaml; `health: enabled: false` turns it off).
+- Log: `scripts/setup_pi.sh log` (add `| grep timing:` to see where the time goes for each dart, or
+  `| grep health:` for temperature and throttling).
   It runs `sudo journalctl _SYSTEMD_USER_UNIT=dartvision.service -f`. `journalctl --user -u dartvision -f`
   works too once the log is kept on disk, which `setup_pi.sh` sets up (on a Pi set up before then, run
   `scripts/setup_pi.sh service` once). Stop / start: `systemctl --user stop dartvision` / `start`
