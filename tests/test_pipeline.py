@@ -125,6 +125,27 @@ def test_tracker():
     assert events == ["DART", "DART", "REMOVED", "TAKEOUT"], events
     print("removal: ok")
 
+    # pulling the darts nudges the board / a camera a couple of pixels and the light shifts: the
+    # whole picture no longer matches the empty board, but the darts' spots do -> still TAKEOUT
+    def nudged(fr, px, light):
+        return {n: np.clip(np.roll(f, px, axis=1).astype(np.int16) + light, 0, 255).astype(np.uint8)
+                for n, f in fr.items()}
+    for px in (1, 2, 3):
+        tr = ThrowTracker(cals, det, {n: (720, 1280, 3) for n in CAMS})
+        tr.reset(frames([], seed=1))
+        events = []
+        seq = ([frames(darts[:1], seed=s) for s in range(5, 15)] +
+               [frames(darts[:2], seed=s) for s in range(15, 25)] +
+               [frames(darts[:2], hand=True, seed=s) for s in range(25, 28)] +
+               [nudged(frames([], seed=s), px, 6) for s in range(28, 40)])
+        for fr in seq:
+            ev = tr.update(fr)
+            if ev:
+                events.append(ev["type"])
+                assert set(ev["timing"]) >= {"moving", "settle", "detect"}
+        assert events == ["DART", "DART", "TAKEOUT"], (px, events)
+    print("takeout after a nudge: ok")
+
 
 if __name__ == "__main__":
     test_scoring()

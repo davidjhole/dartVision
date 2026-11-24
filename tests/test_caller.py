@@ -179,3 +179,39 @@ def test_start_screen_has_test_flash_button():
     x0, y0, x1, y1 = hits["test_flash"]
     assert y1 < 860 and not (x0 <= hits["mode0"][0] <= x1 and y0 <= hits["mode0"][1] <= y1)
     assert "type:'test_flash'" in web.PAGE
+
+
+def test_speaker_keeps_espeak_running(tmp_path):
+    """espeak is started once and sent each call as a line (no start-up wait per call)."""
+    import time
+    out = tmp_path / "said.txt"
+    sp = Speaker("off")
+    sp.cmd = lambda t: ["never-run", t]
+    sp.stream = [sys.executable, "-c",
+                 f"import sys\nfor l in sys.stdin: open({str(out)!r}, 'a').write(l); sys.stdout.flush()"]
+    import threading
+    threading.Thread(target=sp._run, daemon=True).start()
+    sp.say("Sixty")
+    sp.say("Dave, you require\n40")
+    t0 = time.time()
+    while time.time() - t0 < 5 and (not out.exists() or out.read_text().count("\n") < 2):
+        time.sleep(0.05)
+    assert out.read_text().splitlines() == ["Sixty", "Dave, you require 40"]
+    first = sp.proc
+    sp.say("Bust")
+    time.sleep(0.3)
+    assert sp.proc is first                     # still the same espeak
+    first.kill(); first.wait()
+    sp.say("Game shot")                          # it died: a new one is started
+    t0 = time.time()
+    while time.time() - t0 < 5 and "Game shot" not in out.read_text():
+        time.sleep(0.05)
+    assert "Game shot" in out.read_text()
+
+
+def test_espeak_engine_offers_a_warm_mode():
+    import shutil
+    if not (shutil.which("espeak-ng") or shutil.which("espeak")):
+        return
+    assert find_engine("espeak").stream[-2:] == ["-s", "150"]
+    assert Speaker("espeak", warm=False).stream is None

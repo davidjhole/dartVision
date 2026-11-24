@@ -259,6 +259,8 @@ def cmd_play(args):
     frames = grab(cams)
     tracker = ThrowTracker(cals, cfg["detection"], {n: f.shape for n, f in frames.items()})
     tracker.reset(frames)
+    from .timing import Pace
+    pace = Pace()
     rec = None if args.no_record else Recorder(cfg["record_dir"])
     results_path = os.path.join(cfg["record_dir"], "results.jsonl")
 
@@ -294,7 +296,7 @@ def cmd_play(args):
     # ---- caller (voice) and 180 flash
     vcfg = cfg["voice"]
     watcher = TurnWatcher()
-    speaker = Speaker(vcfg["engine"] if vcfg["enabled"] else "off")
+    speaker = Speaker(vcfg["engine"] if vcfg["enabled"] else "off", warm=vcfg.get("warm", True))
     vout = str(vcfg.get("output", "auto")).lower()
     if vcfg["enabled"] and vout in ("auto", "computer", "both") and not speaker.available:
         print("voice: no speech program found on this computer"
@@ -312,8 +314,18 @@ def cmd_play(args):
         call_n += 1
         calls.append({"n": call_n, "text": text, "flash": bool(flash)})
         del calls[:-5]
-        if text and (vout in ("computer", "both") or (vout == "auto" and not (url and web.voice_listening()))):
+        here = bool(text) and (vout in ("computer", "both") or (vout == "auto" and not (url and web.voice_listening())))
+        if here:
             speaker.say(text)
+        if text and pace.dart_at and time.monotonic() - pace.dart_at < 15:
+            where = []
+            if here:
+                where.append(f"this computer ({speaker.mode})" if speaker.available else "this computer (no voice program)")
+            if url and vout != "computer" and web.voice_listening():
+                where.append("the phone / TV page (it checks every 0.25 s, then the phone's own voice)")
+            print(f"timing: called '{text}' {time.monotonic() - pace.dart_at:.2f} s after the dart hit the board"
+                  f" - spoken by {' and '.join(where) or 'nothing (voice off)'}")
+            pace.dart_at = 0.0
 
     def run_caller():
         for ev in watcher.observe(game if screen == "play" else None):
@@ -617,14 +629,21 @@ def cmd_play(args):
                     logbuf.error(f"phone action {a.get('type')} failed", e)
         if want:
             break
+        pace.loop_start()
         frames = grab(cams)
-        ev = tracker.update(frames) if cals else None
+        # only new pictures count: the same frame twice would look "quiet" and end the wait too soon
+        fresh = pace.fresh(cams)
+        ev = tracker.update(frames) if cals and fresh else None
         if ev and screen == "play":
+            t_save = time.monotonic()
             saved = rec.save(ev["before_raw"], frames, ev) if rec and ev["type"] in ("DART", "UNKNOWN") else None
+            if ev["type"] in ("DART", "UNKNOWN", "TAKEOUT", "REMOVED"):
+                print(pace.describe(ev, cams, time.monotonic() - t_save))
             if game.leg_winner and ev["type"] == "TAKEOUT":
                 finish_leg()
             elif ev["type"] == "DART" and not game.leg_winner:
                 res = game.add_dart(ev["label"], ev["points"])
+                pace.dart_at = tracker.moved_at or time.monotonic()
                 if res == "turn_full":
                     status = f"extra dart seen ({ev['label']}) - ignored"
                 else:
@@ -800,6 +819,8 @@ def cmd_play(args):
             act({"type": named[k]})
     for c in cams:
         c.close()
+    if rec:
+        rec.flush()                    # pictures still being written in the background
     if not headless:
         try:
             cv2.destroyAllWindows()

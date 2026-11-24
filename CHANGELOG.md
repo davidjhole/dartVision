@@ -3,6 +3,16 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- **Quicker scores on a Raspberry Pi.** The pictures of each throw are saved in the background (eight
+  PNGs per dart were holding the score up for a couple of seconds on a Pi), finding the dart is about
+  3x faster, and the motion check only shrinks each frame instead of blurring it at full size.
+  espeak stays running between calls (`voice: warm: false` to start it each time), and the phone page
+  checks for new calls every 0.25 s.
+- **Pulling the darts out ends the turn again** when pulling them nudges the board or a camera a pixel or
+  the light shifts: it now checks that each dart's own spot looks empty again, not the whole picture.
+- **`timing:` lines in the log** for every dart and pull-out: how long the dart was moving, the settle
+  wait, finding it in each camera, saving, the main loop and the cameras' real frame rate; and when the
+  score is called, how long after the dart landed and whether the Pi or the phone said it.
 - Phone / PC calibration fixes: on a wide screen in Safari the point landed away from where you clicked
   (the page's 1.25x zoom upset the position maths) - the page isn't zoomed while calibrating now. 1x
   zoom shows the whole picture (it was cut off at the bottom). A wire point that's out of the
