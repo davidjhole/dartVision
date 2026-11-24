@@ -7,7 +7,7 @@ Runs on **Windows, Linux (incl. Raspberry Pi) and macOS**. Python + OpenCV.
 **Easiest: with git** (makes updating a one-liner):
 ```
 git clone https://github.com/davidjhole/dartVision.git
-cd dartvision
+cd dartVision
 ```
 (or download the ZIP from the GitHub Releases page and unzip it)
 
