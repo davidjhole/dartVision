@@ -2,7 +2,7 @@
 
     python -m dartvision setup        find cameras, write config.yaml
     python -m dartvision preview      live view of all cameras (+ board overlay)
-    python -m dartvision calibrate    click-calibrate each camera
+    python -m dartvision calibrate    click-calibrate each camera (on the phone / PC page if no screen)
     python -m dartvision play         play 501 with auto scoring (records every throw)
     python -m dartvision label DIR    go through a recorded session, type the true score
     python -m dartvision replay DIR   re-run detection on a session, report accuracy
@@ -130,11 +130,17 @@ def cmd_preview(args):
     cv2.destroyAllWindows()
 
 
+def _no_screen():
+    return sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
 def cmd_calibrate(args):
     from .cameras import open_cameras
     from .calibrate import calibrate_camera
     cfg = load_config(args.config)
     cams = open_cameras(cfg, only=args.camera, config_path=args.config)
+    if args.web or _no_screen():
+        return _calibrate_web(cams, args.port)
     print("For each camera click: 1) the bull centre, then where the wire meets the OUTER edge of")
     print("the double ring 2) between 20 and 1, 3) between 6 and 10, 4) between 3 and 19, 5) between 11 and 14.")
     print("Use F to freeze the picture, drag points to fine tune, S to save and go to the next camera (N skips one).")
@@ -143,6 +149,33 @@ def cmd_calibrate(args):
             r = calibrate_camera(c)
             if r["quit"]:
                 break
+    finally:
+        for c in cams:
+            c.close()
+
+
+def _calibrate_web(cams, port):
+    """Calibrate from a phone / PC browser: no window needed on this computer (Pi with no screen)."""
+    from . import web
+    from .calibrate import WebCalibrator
+    url = web.start(port)
+    if not url:
+        return
+    web.set_calibrator(WebCalibrator(cams))
+    print(f"\nCalibrate from a phone or PC on the same Wi-Fi: open  {url}")
+    print("Tap the 5 points on each camera's picture and Save. Ctrl+C here when you're done.\n")
+    try:
+        while True:
+            for a in web.take_actions():
+                if a.get("type") == "calibrated":
+                    done = [c.name for c in cams if load_calibration(c.name)]
+                    left = [c.name for c in cams if c.name not in done]
+                    print(f"{a.get('cam')} calibrated" + (f" - still to do: {', '.join(left)}" if left
+                                else " - all cameras done. Ctrl+C, then  python -m dartvision play"))
+            web.publish({"screen": "calibrate", "log": logbuf.for_web()})
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        pass
     finally:
         for c in cams:
             c.close()
@@ -200,9 +233,10 @@ def cmd_play(args):
     cals = {c.name: load_calibration(c.name) for c in cams}
     missing = [n for n, c in cals.items() if c is None]
     if missing:
-        print("Not calibrated yet:", ", ".join(missing), "- run  python -m dartvision calibrate")
+        print("Not calibrated yet:", ", ".join(missing), "- calibrate from the phone page (Calibrate cameras"
+              " in the menu) or run  python -m dartvision calibrate")
         cals = {n: c for n, c in cals.items() if c}
-        if not cals:
+        if not cals and args.no_web:
             return
     frames = grab(cams)
     tracker = ThrowTracker(cals, cfg["detection"], {n: f.shape for n, f in frames.items()})
@@ -211,7 +245,7 @@ def cmd_play(args):
     results_path = os.path.join(cfg["record_dir"], "results.jsonl")
 
     WIN = "dartvision"
-    if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+    if _no_screen():
         args.headless = True                  # no screen attached (e.g. a Pi on its own)
     if not args.headless:
         cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
@@ -356,12 +390,28 @@ def cmd_play(args):
             status = f"dart {i + 1} corrected to {lab}"
         print(f"[{game.player}] {status}")
 
+    def recalibrated(name):
+        """A camera was calibrated from the web page: use it straight away."""
+        nonlocal tracker, last
+        cal = load_calibration(name)
+        if cal is None or name not in {c.name for c in cams}:
+            return
+        cals[name] = cal
+        tracker = ThrowTracker(cals, cfg["detection"], {n: f.shape for n, f in grab(cams).items()})
+        tracker.reset(grab(cams))
+        last = {}
+        left = [c.name for c in cams if c.name not in cals]
+        print(f"{name} calibrated from the web page" + (f" - still to do: {', '.join(left)}" if left else ""))
+
     def act(a):
         """One user action, from a key, a click or the web page."""
         nonlocal screen, status, marks, last, show_cams, typing
         t = a.get("type")
         if t == "test_flash":
             test_flash()
+            return
+        if t == "calibrated":
+            recalibrated(str(a.get("cam", "")))
             return
         if screen == "menu":
             if menu.act(a) == "start":
@@ -402,7 +452,8 @@ def cmd_play(args):
             show_cams = not show_cams
 
     def web_state():
-        common = {"log": logbuf.for_web(), "calls": calls, "web_voice": bool(vcfg["enabled"]) and vout != "computer"}
+        common = {"log": logbuf.for_web(), "calls": calls, "web_voice": bool(vcfg["enabled"]) and vout != "computer",
+                  "can_calibrate": True, "uncalibrated": [c.name for c in cams if c.name not in cals]}
         if screen == "menu":
             return {"screen": "menu", "status": status,
                     "menu": menu.web_state(), "note": UPDATE.get("note", ""), **common}
@@ -422,6 +473,8 @@ def cmd_play(args):
         from . import web
         url = web.start(args.port)
         if url:
+            from .calibrate import WebCalibrator
+            web.set_calibrator(WebCalibrator(cams))
             print(f"\nScoreboard / remote: open  {url}  on a phone, iPad or TV (same Wi-Fi)\n")
     headless = args.headless
     if headless:
@@ -436,7 +489,7 @@ def cmd_play(args):
                 except Exception as e:  # noqa - a bad tap mustn't stop the game
                     logbuf.error(f"phone action {a.get('type')} failed", e)
         frames = grab(cams)
-        ev = tracker.update(frames)
+        ev = tracker.update(frames) if cals else None
         if ev and screen == "play":
             saved = rec.save(ev["before_raw"], frames, ev) if rec and ev["type"] in ("DART", "UNKNOWN") else None
             if game.leg_winner and ev["type"] == "TAKEOUT":
@@ -731,6 +784,9 @@ def main(argv=None):
     s.add_argument("--keep-builtin", action="store_true", help="keep the computer's own camera too")
     sub.add_parser("preview")
     s = sub.add_parser("calibrate"); s.add_argument("--camera", help="only this camera name")
+    s.add_argument("--web", action="store_true", help="calibrate from a phone / PC browser instead of a window "
+                   "(automatic on a Pi with no screen)")
+    s.add_argument("--port", type=int, default=8080, help="web page port (with --web)")
     s = sub.add_parser("play"); s.add_argument("players", nargs="*", default=["Player 1"])
     s.add_argument("--start", type=int, default=501, help="pre-select 301 / 501 / 701 in the menu")
     s.add_argument("--headless", action="store_true", help="no window: play from the web page only (Pi with no screen)")
