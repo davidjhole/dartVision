@@ -207,7 +207,7 @@ def test_page_with_voice_on_takes_over_the_talking(base):
 
 
 def test_page_has_voice_button_and_flash():
-    assert 'id="vbtn"' in web.PAGE and 'id="flash"' in web.PAGE and "speechSynthesis" in web.PAGE
+    assert 'class="vbtn"' in web.PAGE and 'id="flash"' in web.PAGE and "speechSynthesis" in web.PAGE
 
 
 def test_page_has_the_info_bar_and_log(base):

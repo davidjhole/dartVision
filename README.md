@@ -127,7 +127,7 @@ After each turn the score is called out like a darts caller: "One hundred and ei
 "Bust", "Dave, you require 40", "Game shot, and the leg!". It speaks on the computer running
 dartvision (on a Pi plugged into the TV with HDMI, it comes out of the TV; on a Pi / Linux install a
 voice once with `sudo apt install espeak-ng`). To hear it from a **phone, iPad or TV browser** instead,
-tap **Voice off** at the top right of the web page so it says **Voice on** (the tap is needed so the
+tap **Voice off** (on the start and game screens, and in Settings) so it says **Voice on** (the tap is needed so the
 browser allows sound). While a page has its voice on, the computer stays quiet so you don't hear it twice.
 Choose with `voice: output:` in `config.yaml`: `auto` (that), `computer`, `web` or `both`; `enabled: false` turns it off.
 

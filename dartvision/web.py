@@ -269,8 +269,10 @@ table.cr td.n{color:var(--text)} table.cr td.closed{color:var(--dim)}
 .panel button{background:#3a3f45}
 .panel .mult button.on{background:var(--active)}
 @media(min-width:1200px){body:not(.nozoom){zoom:1.25}}
-body{padding-bottom:calc(52px + env(safe-area-inset-bottom))}
-#info{position:fixed;left:0;right:0;bottom:0;z-index:4;display:flex;gap:10px;align-items:center;justify-content:space-between;
+/* the messages bar sits at the bottom of the page (end of the content), not floating over it */
+body{display:flex;flex-direction:column;padding-bottom:0}
+body>div:not(.overlay):not(#flash):not(#info){width:100%}
+#info{margin:16px -14px 0;margin-top:auto;display:flex;gap:10px;align-items:center;justify-content:space-between;
  background:#0e0f10;border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));font-size:13px;cursor:pointer}
 #infot{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
 #info .lb{flex:none;background:var(--card);border-radius:8px;padding:4px 10px;color:var(--text)}
@@ -285,11 +287,11 @@ body{padding-bottom:calc(52px + env(safe-area-inset-bottom))}
 .banner{text-align:center}
 .banner h2{font-size:34px}
 .small{font-size:13px;color:var(--dim)}
-#vbtn{position:fixed;top:max(8px,env(safe-area-inset-top));right:10px;z-index:4;font-size:14px;padding:8px 12px;background:var(--panel)}
-#vbtn.on{background:var(--good);color:#111;font-weight:800}
+.vbtn{font-size:14px;padding:8px 12px;background:var(--panel);flex:none}
+.vbtn.on{background:var(--good);color:#111;font-weight:800}
 .calbtn{width:100%;margin-top:10px;background:var(--panel)}
 .warn{color:var(--accent);font-weight:700;margin:6px 0}
-#cal{max-width:1100px;margin:auto}
+#cal{max-width:1100px;margin:0 auto}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
 .tabs button{background:var(--panel);font-weight:700}
 .tabs button.on{background:var(--card);box-shadow:inset 0 -4px 0 var(--active)}
@@ -316,10 +318,9 @@ body{padding-bottom:calc(52px + env(safe-area-inset-bottom))}
 font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid var(--accent);animation:fl .4s steps(2) infinite}
 @keyframes fl{0%{background:#ffc80055;border-color:var(--accent);color:var(--accent)}50%{background:transparent;border-color:var(--bad);color:var(--bad)}}
 </style></head><body>
-<button id="vbtn" onclick="toggleVoice()">Voice off</button>
 <div id="flash" class="hidden">180</div>
 <div id="menu" class="hidden">
-  <div class="row" style="padding-right:96px"><h1 style="flex:1">dartvision</h1><button onclick="openSettings()">&#9881; Settings</button></div>
+  <div class="row"><h1 style="flex:1">dartvision</h1><button class="vbtn" onclick="toggleVoice()">Voice off</button><button onclick="openSettings()">&#9881; Settings</button></div>
   <div class="status" id="mstatus"></div>
   <div id="needset" class="hidden"><div class="panel" style="width:100%;margin:10px 0">
     <h2>Set up before playing</h2><div id="needmsg" class="title"></div>
@@ -334,13 +335,15 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   </div>
 </div>
 <div id="settings" class="hidden">
-  <div class="row" style="padding-right:96px"><h1 style="flex:1">Settings</h1><button onclick="closeSettings()">Back</button></div>
+  <div class="row"><h1 style="flex:1">Settings</h1><button onclick="closeSettings()">Back</button></div>
   <div class="sub">Cameras</div>
   <div id="camwarn" class="warn hidden">No cameras set up yet - tap Set up cameras</div>
   <div id="setnote" class="small"></div>
   <button id="setopen" class="calbtn hidden" onclick="act({type:'setup_open'})">Set up cameras</button>
   <div id="calwarn" class="warn hidden"></div>
   <button id="calopen" class="calbtn hidden" onclick="openCal()">Calibrate cameras</button>
+  <div class="sub">Sound</div>
+  <div class="opt"><span>Caller's voice on this phone / screen</span><button class="vbtn" onclick="toggleVoice()">Voice off</button></div>
   <div class="sub">Light</div>
   <button id="tflash" class="calbtn" style="font-weight:800;color:var(--accent)" onclick="act({type:'test_flash'})">Test 180 flash</button>
   <div class="sub">dartvision</div>
@@ -350,7 +353,7 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <div class="small" style="margin-top:6px">Both install a newer version from GitHub if there is one, then start again. The page reconnects by itself.</div>
 </div>
 <div id="setup" class="hidden">
-  <div class="row" style="padding-right:96px"><h1 style="flex:1">Cameras</h1></div>
+  <div class="row"><h1 style="flex:1">Cameras</h1></div>
   <div class="status" id="setmsg"></div>
   <div class="small">Tick the cameras on the board and turn each one so the <b>board is at the bottom</b> of its
    picture (darts pointing up). Keep each camera in the same USB port afterwards - that's how it's recognised.</div>
@@ -362,7 +365,7 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   </div>
 </div>
 <div id="cal" class="hidden">
-  <div class="row" style="padding-right:96px"><h1 style="flex:1;white-space:nowrap">Calibrate</h1><button id="caldone" onclick="closeCal()">Done</button></div>
+  <div class="row"><h1 style="flex:1;white-space:nowrap">Calibrate</h1><button id="caldone" onclick="closeCal()">Done</button></div>
   <div id="caltabs" class="tabs"></div>
   <div class="calstep"><svg id="calguide" viewBox="-240 -240 480 480"></svg>
     <div><div id="calmsg"></div><div class="small" id="calsub"></div>
@@ -381,7 +384,7 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
 </div>
 <div id="play" class="hidden"><div class="wrap">
   <div>
-    <div class="title" id="gtitle"></div>
+    <div class="row"><div class="title" id="gtitle" style="flex:1"></div><button class="vbtn" onclick="toggleVoice()">Voice off</button></div>
     <div id="pcards"></div>
     <div class="sub"><span id="who"></span> - this turn <span class="small">(tap a dart to correct it)</span></div>
     <div class="darts" id="darts"></div>
@@ -414,6 +417,7 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <h2 id="lostt">Lost connection</h2><div id="lostl" class="title"></div><br>
   <div class="small">This page reconnects by itself when dartvision is running again.</div>
 </div></div>
+<div style="height:16px;flex:none"></div>
 <div id="info" onclick="toggleLog()"><span id="infot">connecting...</span><span class="lb">Log</span></div>
 <div id="logo" class="overlay hidden" onclick="if(event.target===this)toggleLog()"><div class="panel logp">
   <h2>Log</h2><div class="small">what the computer printed, newest at the bottom</div><div id="logl"></div>
@@ -421,7 +425,7 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
 <script>
 let voiceOn=false, lastCall=null, flashT=0;
 try{voiceOn=localStorage.getItem('dv_voice')==='1'}catch(e){}
-function updV(){$('vbtn').textContent=voiceOn?'Voice on':'Voice off';$('vbtn').classList.toggle('on',voiceOn)}
+function updV(){document.querySelectorAll('.vbtn').forEach(b=>{b.textContent=voiceOn?'Voice on':'Voice off';b.classList.toggle('on',voiceOn)})}
 function speak(t){try{const u=new SpeechSynthesisUtterance(t);u.lang='en-GB';
  const v=speechSynthesis.getVoices().find(v=>v.lang==='en-GB');if(v)u.voice=v;speechSynthesis.speak(u)}catch(e){}}
 function toggleVoice(){voiceOn=!voiceOn;try{localStorage.setItem('dv_voice',voiceOn?'1':'0')}catch(e){}
