@@ -44,15 +44,30 @@ Set `exposure:` to a number once lighting is final, so the picture doesn't chang
 
 ## 3. Calibrate (each camera, ~1 minute)
 
+**From a phone, iPad or PC (no screen or VNC needed on the Pi).** Start dartvision as usual:
 ```
-python -m dartvision calibrate
+python -m dartvision play
 ```
-Click, in order: **1** the bull centre, then where a wire meets the **outer edge of the double ring**:
-**2** between 20 and 1, **3** between 6 and 10, **4** between 3 and 19, **5** between 11 and 14.
-The little board top-left shows which point is next, and the box top-right is a magnifier.
-When all 5 are placed a green wire overlay appears – drag points until it sits exactly on the
-real wires, then **S** to save – it moves straight on to the next camera (**N** skips a camera
-without saving). (`F` freezes the image.)
+open the address it prints (e.g. `http://192.168.1.40:8080`) in a browser on the same Wi-Fi and tap
+**Calibrate cameras** under Start in the menu. (Only want to calibrate? `python -m dartvision calibrate --web`
+serves just the calibration page; on a Pi with no screen `calibrate` does that by itself.)
+
+For each camera, tap on its picture, in order: **1** the bull centre, then where a wire meets the
+**outer edge of the double ring**: **2** between 20 and 1, **3** between 6 and 10, **4** between 3 and 19,
+**5** between 11 and 14. The little board shows which point is next.
+- **+ / −** zoom the picture (it starts at 2x on a phone); drag the picture to move around.
+- **Drag a point** to nudge it: it moves slower than your finger, and a magnifier shows the exact spot.
+- When all 5 are placed, green wires are drawn over the picture with the fit error. Nudge points until
+  the green wires sit exactly on the real wires, then **Save**; it moves on to the next camera.
+- **New picture** takes a fresh still from the camera, **Undo** / **Reset** remove points.
+
+It's used straight away – no restart – and the menu warns while a camera isn't calibrated yet.
+The picture is a still, so it doesn't matter if someone walks past while you're tapping.
+
+**On the computer itself (with a screen):** `python -m dartvision calibrate` opens a window instead:
+click the same 5 points, the box top-right is a magnifier, drag points to adjust, **S** saves and moves
+on to the next camera (**N** skips one, **F** freezes the image).
+
 Redo this whenever a camera or the board moves.
 
 ## 4. Play
@@ -75,7 +90,9 @@ Wrong dart? **Click it** (or press **1**, **2**, **3**, or **C** for the last on
 `play` also starts a web page; the address is printed when it starts (e.g. `http://192.168.1.40:8080`).
 Open it on any phone, iPad or TV browser on the same Wi-Fi: it shows the scores and the board, and
 you can set up the game, tap a dart to correct it, undo, add a miss and say the darts are out.
-On a Pi with no screen it runs like that automatically (or use `play --headless`).
+On a Pi with no screen it runs like that automatically (or use `play --headless`), and cameras are
+calibrated from the same page (**Calibrate cameras** in the menu), so a headless Pi never needs VNC:
+SSH in to run `setup` once, then everything else happens on the phone.
 `--port 8090` changes the port, `--no-web` turns it off.
 
 ### The caller (voice) and 180 flash

@@ -131,3 +131,79 @@ def calibrate_camera(cam, folder="calib"):
             break                                   # straight on to the next camera
     cv2.destroyWindow(WIN)
     return {"saved": saved, "quit": k in (ord("q"), 27)}
+
+
+# ------------------------------------------------------------------ calibrating from the web page
+def wire_lines(H):
+    """The board's wires as polylines in image pixels, for the web page to draw over the picture."""
+    out = []
+    for r in (board.R_BULL, board.R_OUTER_BULL, board.R_TRIPLE_IN, board.R_TRIPLE_OUT,
+              board.R_DOUBLE_IN, board.R_DOUBLE_OUT):
+        out.append(board.board_to_image(board._circle_pts(r, 96), H))
+    for i in range(20):
+        a = np.radians(90 - 18 * i - 9)
+        seg = [(board.R_OUTER_BULL * np.cos(a), board.R_OUTER_BULL * np.sin(a)),
+               (board.R_DOUBLE_OUT * np.cos(a), board.R_DOUBLE_OUT * np.sin(a))]
+        out.append(board.board_to_image(seg, H))
+    return [[[round(float(x), 1), round(float(y), 1)] for x, y in line] for line in out]
+
+
+class WebCalibrator:
+    """Calibration through the phone / PC web page instead of a window on the computer, so a Pi
+    with no screen can be calibrated without VNC. The page fetches a still picture from each
+    camera, you tap the 5 points on it, and it sends them back here to check and save.
+
+    Called from the web server's threads; Camera.read() is thread-safe and returns a copy.
+    """
+
+    def __init__(self, cams, folder="calib", on_saved=None):
+        self.cams = {c.name: c for c in cams}
+        self.order = [c.name for c in cams]
+        self.folder = folder
+        self.on_saved = on_saved
+
+    def cameras(self):
+        out = []
+        for n in self.order:
+            cal = load_calibration(n, self.folder)
+            out.append({"name": n, "size": list(self.cams[n].size),
+                        "saved": cal["saved"] if cal else None,
+                        "image_size": cal.get("image_size") if cal else None,
+                        "points": cal["image_points"] if cal else None})
+        return {"cameras": out,
+                "targets": [{"name": t, "mm": [round(p[0], 2), round(p[1], 2)]} for t, p in board.CALIB_POINTS]}
+
+    def frame_jpeg(self, name, quality=88):
+        cam = self.cams.get(name)
+        f = cam.read() if cam else None
+        if f is None:
+            return None
+        ok, buf = cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        return buf.tobytes() if ok else None
+
+    def _points(self, name, points):
+        if name not in self.cams:
+            raise ValueError(f"no camera called {name!r}")
+        n = len(board.CALIB_POINTS)
+        try:
+            pts = [(float(p[0]), float(p[1])) for p in points]
+        except (TypeError, ValueError, IndexError):
+            raise ValueError("points must be [x, y] pairs")
+        if len(pts) != n or not all(np.isfinite(pts).all(axis=1)):
+            raise ValueError(f"need all {n} points")
+        return pts
+
+    def preview(self, name, points):
+        """Fit the points without saving: fit error + wire overlay to draw."""
+        pts = self._points(name, points)
+        H, err = compute_homography(pts, [p for _, p in board.CALIB_POINTS])
+        return {"ok": True, "err": round(err, 2), "lines": wire_lines(H)}
+
+    def save(self, name, points):
+        pts = self._points(name, points)
+        H, err = compute_homography(pts, [p for _, p in board.CALIB_POINTS])
+        save_calibration(name, pts, [p for _, p in board.CALIB_POINTS], H, self.cams[name].size, self.folder)
+        print(f"saved calibration for {name} from the web page (fit error {err:.2f}px)")
+        if self.on_saved:
+            self.on_saved(name)
+        return {"ok": True, "err": round(err, 2)}

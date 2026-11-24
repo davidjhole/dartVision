@@ -3,6 +3,11 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- Calibrate from the phone / iPad / PC web page: **Calibrate cameras** in the menu shows each
+  camera's picture; tap the 5 points, zoom in and nudge them with a magnifier, see the wire overlay
+  and fit error, Save. It's used straight away without restarting, so a Pi with no screen no longer
+  needs VNC. `calibrate --web` (automatic with no screen) serves only the calibration page. `play`
+  now starts even when no camera is calibrated yet, so you can calibrate from the phone.
 - **Test 180 flash** button on the start screen (window and web page): flashes the light, screen and
   phone and calls the 180, so the light can be checked without throwing one.
 - Messages on screen: an info line along the bottom of the window and the phone page shows the
