@@ -18,10 +18,10 @@ def default_backend():
     return cv2.CAP_V4L2               # Linux and Raspberry Pi
 
 
-def list_cameras(max_index=10):
-    """Try indexes 0..max_index and report which ones deliver frames."""
+def list_cameras(max_index=10, indexes=None):
+    """Try indexes 0..max_index (or the given ones) and report which ones deliver frames."""
     found = []
-    for i in range(max_index):
+    for i in (range(max_index) if indexes is None else indexes):
         cap = cv2.VideoCapture(i, default_backend())
         if not cap.isOpened():
             cap.release()
@@ -198,9 +198,10 @@ class Camera:
             pass
 
 
-def open_cameras(cfg, only=None, config_path=None):
+def open_cameras(cfg, only=None, config_path=None, allow_none=False):
     """Open the configured cameras. Cameras saved with a port id (setup on macOS / Linux) are
-    found by that id, so it doesn't matter if the computer has renumbered them."""
+    found by that id, so it doesn't matter if the computer has renumbered them. A camera that
+    won't open is skipped; with none at all it stops, unless allow_none (then it returns [])."""
     devs = devices.list_devices()
     cams, moved = [], False
     for c in cfg["cameras"]:
@@ -221,9 +222,16 @@ def open_cameras(cfg, only=None, config_path=None):
             if d and d["builtin"]:
                 print(f"[{c['name']}] index {index} is '{d['name']}', the computer's own camera. "
                       "Run  python -m dartvision setup  again.")
-        cams.append(Camera(c["name"], index, cfg["width"], cfg["height"], cfg["fps"],
-                           c.get("rotate", 0), cfg.get("exposure"), c.get("id")))
+        try:
+            cams.append(Camera(c["name"], index, cfg["width"], cfg["height"], cfg["fps"],
+                               c.get("rotate", 0), cfg.get("exposure"), c.get("id")))
+        except RuntimeError as e:
+            print(f"[{c['name']}] {e} - skipping it.")
     if not cams:
+        if allow_none:       # play with the web page: cameras can be set up from there
+            print("No cameras opened - set them up from the phone page (Set up cameras), "
+                  "or run  python -m dartvision setup")
+            return []
         raise SystemExit("No cameras opened. Run:  python -m dartvision setup")
     if moved and config_path:
         from .config import save_config

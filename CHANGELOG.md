@@ -3,6 +3,14 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- **Raspberry Pi in one command:** flash Pi OS Lite, `ssh` in, install git, clone, run `scripts/setup_pi.sh`.
+  It installs everything (including `libgl1`, which OpenCV needs on Lite) and starts dartvision on boot with
+  no screen; the rest is done from the phone / PC page.
+- **Set up cameras** from the phone / PC page (what `python -m dartvision setup` does): a picture from every
+  camera found, tick the ones to use, turn them board-down, Save - used straight away. `play` now starts
+  with no cameras at all, so a brand-new install can be set up from the page.
+- Linux: only USB cameras are looked for (a Raspberry Pi 5's own camera / video devices are skipped).
+- README: `cd dartVision` (the folder name is case-sensitive on Linux / Pi).
 - Calibrate from the phone / iPad / PC web page: **Calibrate cameras** in the menu shows each
   camera's picture; tap the 5 points, zoom in and nudge them with a magnifier, see the wire overlay
   and fit error, Save. It's used straight away without restarting, so a Pi with no screen no longer
