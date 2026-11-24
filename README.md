@@ -151,6 +151,11 @@ and **labelled automatically while you play**: a dart you correct with **C** is 
 right score, a dart you **U**ndo is saved as a false detection, and any dart you didn't correct
 by the time the darts are pulled is taken as correct. So normal play builds the test set.
 
+With 4 cameras a throw takes about 2 MB (JPEG), so a 501 leg is roughly 50–100 MB. The oldest
+recordings are deleted to keep them under 2 GB. Change that with `record:` in `config.yaml`:
+`max_mb` sets the limit, `save: unknown` keeps only the darts it couldn't read, and `save: off`
+keeps none.
+
 ```
 python -m dartvision label  recordings/session_XXXX    # optional: review/label throws by hand
 python -m dartvision replay recordings/session_XXXX    # re-run detection, prints accuracy %

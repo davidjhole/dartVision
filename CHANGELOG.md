@@ -3,6 +3,11 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- **Recordings take far less space and can't fill the card.** Throw pictures are saved as JPEG (about
+  2 MB a dart with 4 cameras, down from about 13 MB as PNG; re-running detection scores the same), and
+  the oldest recordings are deleted to stay under 2 GB. **On first start this deletes the oldest
+  recordings beyond 2 GB.** New `record:` settings: `save: all | unknown | off`, `format: jpg | png`,
+  `max_mb`.
 - **Much less work (and heat) while waiting for a dart.** Only every other camera picture is decoded
   while waiting for a throw, and one in five on the menu. Every picture is used again as soon as
   something moves. The main loop no longer copies all the camera pictures when none of them is new,

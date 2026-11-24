@@ -261,7 +261,11 @@ def cmd_play(args):
     tracker.reset(frames)
     from .timing import Pace
     pace = Pace()
-    rec = None if args.no_record else Recorder(cfg["record_dir"])
+    rcfg = cfg["record"]
+    save_what = str(rcfg.get("save", "all")).lower()
+    rec = None if args.no_record or save_what in ("off", "none", "false", "no") else \
+        Recorder(cfg["record_dir"], fmt=rcfg.get("format", "jpg"), max_mb=rcfg.get("max_mb", 2000))
+    record_kinds = ("UNKNOWN",) if save_what == "unknown" else ("DART", "UNKNOWN")
     results_path = os.path.join(cfg["record_dir"], "results.jsonl")
 
     WIN = "dartvision"
@@ -646,7 +650,7 @@ def cmd_play(args):
             c.decode_every = skip
         if ev and screen == "play":
             t_save = time.monotonic()
-            saved = rec.save(ev["before_raw"], frames, ev) if rec and ev["type"] in ("DART", "UNKNOWN") else None
+            saved = rec.save(ev["before_raw"], frames, ev) if rec and ev["type"] in record_kinds else None
             if ev["type"] in ("DART", "UNKNOWN", "TAKEOUT", "REMOVED"):
                 print(pace.describe(ev, cams, time.monotonic() - t_save))
             if game.leg_winner and ev["type"] == "TAKEOUT":
