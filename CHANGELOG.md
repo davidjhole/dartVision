@@ -3,6 +3,14 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- **Faster again on a Pi:** finding a dart is about 2.5x quicker and a pull-out about 4x. The
+  cameras are worked on side by side, each change picture is made once and reused, and only the part
+  of the picture around the board is used.
+- **The settle wait counts real frames:** a frame now means a new picture from *every* camera, not just
+  from any one of them. With 4 cameras the wait had been about a quarter of what it should be, so a
+  dart could be looked at before every camera had a still picture of it (reads as "couldn't read that one").
+- The `timing:` line gives the reason when a camera couldn't find the dart, and the loop time is the
+  typical value, no longer pushed up by the slow pass that did the detection.
 - **Pi log fixed:** `journalctl --user -u dartvision` said "No journal files were found" because Pi OS keeps
   its log in memory only. `setup_pi.sh` now keeps the log on disk (capped at 100 MB), and the service
   prints each line straight away. A new `scripts/setup_pi.sh log` shows the log. On a Pi that's already

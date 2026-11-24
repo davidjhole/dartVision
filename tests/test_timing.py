@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+import time
 
 import numpy as np
 
@@ -13,6 +14,7 @@ from dartvision.timing import Pace  # noqa: E402
 class FakeCam:
     def __init__(self, name):
         self.name, self.count, self.frame = name, 0, np.zeros((720, 1280, 3), np.uint8)
+        self.stamp = time.time()
 
 
 def test_timing_line():
@@ -21,7 +23,15 @@ def test_timing_line():
     assert p.fresh(cams)
     assert not p.fresh(cams)                  # nothing new: the tracker isn't fed a repeat
     cams[1].count += 1
+    assert not p.fresh(cams)                  # only one camera has a new picture: wait for both
+    cams[0].count += 1
     assert p.fresh(cams)
+    cams[0].count += 1
+    cams[1].stamp -= 2                         # cam2 stopped sending: don't wait for it
+    assert p.fresh(cams)
+    unk = {"type": "UNKNOWN", "cams": {"cam1": {"ok": False, "reason": "blob too small (80px)"}, "cam2": {"ok": True}},
+           "timing": {"moving": 0, "settle": 0.4, "detect": 0.1, "cams": {"cam1": 0.04, "cam2": 0.05}}}
+    assert "(cam1 0.04 blob too small (80px), cam2 0.05)" in p.describe(unk, cams)
     ev = {"type": "DART", "label": "T20",
           "timing": {"moving": 0.3, "settle": 0.2, "detect": 0.1, "cams": {"cam1": 0.04, "cam2": 0.05}}}
     line = p.describe(ev, cams, 0.0)
