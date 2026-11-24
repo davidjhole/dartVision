@@ -169,3 +169,13 @@ def test_no_lights_configured():
 def test_http_lights_need_both_urls():
     assert not Lights({"type": "http", "on_url": "http://x/on"}).enabled
     assert Lights({"type": "http", "on_url": "http://x/on", "off_url": "http://x/off"}).enabled
+
+
+# ------------------------------------------------------------- test button on the start screen
+def test_start_screen_has_test_flash_button():
+    from dartvision import ui, web
+    from dartvision.games import MODES
+    out, hits = ui.draw_menu(1600, 860, MODES, 0, 0, [("Legs", "single leg")], ["Dave"], "")
+    x0, y0, x1, y1 = hits["test_flash"]
+    assert y1 < 860 and not (x0 <= hits["mode0"][0] <= x1 and y0 <= hits["mode0"][1] <= y1)
+    assert "type:'test_flash'" in web.PAGE

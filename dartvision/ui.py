@@ -291,6 +291,13 @@ def draw_menu(W, H, modes, sel_row, mode_i, opts, players, typing):
         text(out, name, (pad + int(28 * u), y + int(rh * 0.55)), 0.9 * u, WHITE if on else GREY, 2, BOLD)
         hits[f"mode{i}"] = (pad, y, x_mid - pad, y + rh - int(10 * u))
         y += rh
+    # left, under the games: try the 180 celebration (light, screen, phone, voice)
+    y += int(30 * u)
+    text(out, "Light", (pad, y), 0.8 * u, GREY, 1)
+    y += int(20 * u)
+    box(out, (pad, y), (x_mid - pad, y + rh - int(10 * u)), PANEL, int(12 * u))
+    text(out, "Test 180 flash", (pad + int(28 * u), y + int(rh * 0.55)), 0.9 * u, ACCENT, 2, BOLD)
+    hits["test_flash"] = (pad, y, x_mid - pad, y + rh - int(10 * u))
     # right: options + players
     x = x_mid + pad
     y = int(140 * u)

@@ -111,6 +111,9 @@ A **180** flashes the screen and the web page. It can flash the light too, set i
 - **Smart plug / Wi-Fi controller** (Shelly, Tasmota, WLED...): `type: http`, `on_url:` and `off_url:`.
 - **Anything else**: `type: command`, `on_cmd:` and `off_cmd:`.
 
+To try it without throwing a 180, press **Test 180 flash** on the start screen (window or web page):
+it flashes the light, the screen and the page and calls "One hundred and eighty!".
+
 ## 5. Improve accuracy with your own throws
 
 Every throw is saved in `recordings/session_.../` (before/after picture from every camera),
