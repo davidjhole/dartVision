@@ -27,6 +27,7 @@ voice:
   output: auto          # auto | computer | web | both  (auto: phone/TV page if its voice is on, else this computer)
   engine: auto          # auto | say | espeak | sapi | off
   require: true         # "Dave, you require 40"
+  warm: true            # espeak (Pi / Linux): keep it running so calls start straight away
 lights:                 # flash the halo light on a 180 (see dartvision/lights.py)
   type: none            # none | http | command | gpio
   # on_url: http://192.168.1.50/relay/0?turn=on

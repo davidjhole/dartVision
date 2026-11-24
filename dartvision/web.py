@@ -667,5 +667,5 @@ function setDraw(i){const c=SET.cams[i],cv=$('scv'+i);if(!cv)return;const g=cv.g
 function setUse(i,on){SET.cams[i].use=on;setDraw(i);$('setsave').disabled=!SET.cams.some(c=>c.use)}
 function setRot(i){const c=SET.cams[i];c.rotate=(c.rotate+90)%360;setDraw(i)}
 function setSave(){act({type:'setup_save',cams:SET.cams.map(c=>({index:c.index,use:!!c.use,rotate:c.rotate}))})}
-updV();setInterval(poll,400);poll();
+updV();setInterval(poll,250);poll();
 </script></body></html>"""

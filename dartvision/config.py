@@ -35,6 +35,7 @@ DEFAULT = {
         "output": "auto",
         "engine": "auto",          # auto | say (Mac) | espeak (Linux / Pi) | sapi (Windows) | off
         "require": True,           # "you require 40" at the start of a turn on a finish
+        "warm": True,              # espeak: keep it running between calls (quicker); false = start it each time
     },
     "lights": {"type": "none"},    # flash on a 180 - see dartvision/lights.py
 }

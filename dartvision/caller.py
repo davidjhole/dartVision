@@ -146,7 +146,10 @@ def find_engine(name="auto"):
         return ["say", t]
 
     def espeak(binary):
-        return lambda t: [binary, "-v", "en-gb", "-s", "150", t]
+        base = [binary, "-v", "en-gb", "-s", "150"]
+        fn = lambda t: base + [t]      # noqa: E731
+        fn.stream = base               # started once with no text, it says each line it's sent
+        return fn
 
     def sapi(t):
         t = t.replace("'", "''")
@@ -168,12 +171,18 @@ def find_engine(name="auto"):
 
 
 class Speaker:
-    """Says phrases one at a time in a background thread, so the game never waits for it."""
+    """Says phrases one at a time in a background thread, so the game never waits for it.
 
-    def __init__(self, engine="auto", runner=None):
+    espeak (Linux / Raspberry Pi) is kept running and sent each phrase as a line, so it doesn't
+    have to start up (load its voice, open the sound card) for every call."""
+
+    def __init__(self, engine="auto", runner=None, warm=True):
         self.cmd = find_engine(engine)
         self.runner = runner or (lambda argv: subprocess.run(argv, stdout=subprocess.DEVNULL,
                                                              stderr=subprocess.DEVNULL, timeout=20))
+        self.stream = None if runner or not warm else getattr(self.cmd, "stream", None)
+        self.proc = None
+        self.mode = "warm" if self.stream else "start per call"
         self.q = queue.Queue()
         if self.cmd:
             threading.Thread(target=self._run, daemon=True).start()
@@ -192,10 +201,33 @@ class Speaker:
                     break
             self.q.put(text)
 
+    def _send_warm(self, text):
+        """Hand a line to the running espeak. False if it can't be (then start one per call)."""
+        for _ in range(2):
+            if self.proc is None or self.proc.poll() is not None:
+                try:
+                    self.proc = subprocess.Popen(self.stream, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                                 stderr=subprocess.DEVNULL)
+                except Exception:  # noqa
+                    self.proc = None
+                    return False
+            try:
+                self.proc.stdin.write((" ".join(text.split()) + "\n").encode())
+                self.proc.stdin.flush()
+                return True
+            except Exception:  # noqa - it died (sound card gone?): start a new one once
+                self.proc = None
+        return False
+
     def _run(self):
         while True:
             t = self.q.get()
             try:
+                if self.stream and self._send_warm(t):
+                    continue
+                if self.stream:
+                    self.stream, self.mode = None, "start per call"
+                    print("voice: couldn't keep espeak running - starting it for each call instead")
                 self.runner(self.cmd(t))
             except Exception:  # noqa - a missing or broken voice must never stop the game
                 pass
