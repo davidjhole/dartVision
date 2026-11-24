@@ -2,6 +2,9 @@
 
 The game loop puts its state here with publish(); the page polls /state and sends taps to /action,
 which the game loop picks up with take_actions(). Standard library only.
+
+Calibration from the page: set_calibrator() hands over an object (calibrate.WebCalibrator) that
+serves /calib/cams, /calib/frame?cam=NAME (a JPEG), /calib/preview and /calib/save.
 """
 import atexit
 import json
@@ -10,6 +13,7 @@ import queue
 import socket
 import threading
 import time
+from urllib.parse import parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _state = {"v": 0, "data": {}}
@@ -19,6 +23,12 @@ _lock = threading.Lock()
 _actions = queue.Queue()
 _voice_seen = {"t": 0.0}     # last time a page with its voice switched on asked for the state
 VOICE_TIMEOUT = 3.0
+_calib = {"h": None}
+
+
+def set_calibrator(c):
+    """Let the page calibrate the cameras (None turns it off)."""
+    _calib["h"] = c
 
 
 def publish(data):
@@ -100,13 +110,57 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, body, "application/json")
         elif self.path in ("/", "/index.html"):
             self._send(200, PAGE, "text/html; charset=utf-8")
+        elif self.path.startswith("/calib/"):
+            self._calib_get()
         else:
             self._send(404, "not found", "text/plain")
 
+    def _json(self, code, obj):
+        self._send(code, json.dumps(obj), "application/json")
+
+    def _calib_get(self):
+        c = _calib["h"]
+        u = urlparse(self.path)
+        if c is None:
+            return self._json(404, {"ok": False, "error": "calibration isn't available"})
+        if u.path == "/calib/cams":
+            return self._json(200, c.cameras())
+        if u.path == "/calib/frame":
+            name = parse_qs(u.query).get("cam", [""])[0]
+            jpg = c.frame_jpeg(name)
+            if jpg is None:
+                return self._send(503, "no picture from that camera", "text/plain")
+            return self._send(200, jpg, "image/jpeg")
+        self._send(404, "not found", "text/plain")
+
+    def _calib_post(self, body):
+        c = _calib["h"]
+        if c is None:
+            return self._json(404, {"ok": False, "error": "calibration isn't available"})
+        try:
+            if not isinstance(body, dict):
+                raise ValueError("bad request")
+            name, pts = str(body.get("cam", "")), body.get("points")
+            if self.path == "/calib/preview":
+                return self._json(200, c.preview(name, pts))
+            if self.path == "/calib/save":
+                r = c.save(name, pts)
+                _actions.put({"type": "calibrated", "cam": name})     # the game loop reloads it
+                return self._json(200, r)
+        except ValueError as e:
+            return self._json(400, {"ok": False, "error": str(e)})
+        self._send(404, "not found", "text/plain")
+
     def do_POST(self):
-        if self.path != "/action":
+        if self.path not in ("/action", "/calib/preview", "/calib/save"):
             return self._send(404, "not found", "text/plain")
         n = int(self.headers.get("Content-Length", 0) or 0)
+        if self.path.startswith("/calib/"):
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except ValueError:
+                return self._json(400, {"ok": False, "error": "bad request"})
+            return self._calib_post(body)
         try:
             a = json.loads(self.rfile.read(n) or b"{}")
             if isinstance(a, dict) and isinstance(a.get("type"), str):
@@ -218,6 +272,22 @@ body{padding-bottom:calc(52px + env(safe-area-inset-bottom))}
 .small{font-size:13px;color:var(--dim)}
 #vbtn{position:fixed;top:max(8px,env(safe-area-inset-top));right:10px;z-index:4;font-size:14px;padding:8px 12px;background:var(--panel)}
 #vbtn.on{background:var(--good);color:#111;font-weight:800}
+.calbtn{width:100%;margin-top:10px;background:var(--panel)}
+.warn{color:var(--accent);font-weight:700;margin:6px 0}
+#cal{max-width:1100px;margin:auto}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.tabs button{background:var(--panel);font-weight:700}
+.tabs button.on{background:var(--card);box-shadow:inset 0 -4px 0 var(--active)}
+.calstep{display:flex;gap:10px;align-items:center;margin:6px 0 8px}
+.calstep svg{width:76px;height:76px;flex:none}
+#calmsg{font-weight:800;font-size:17px}
+#calwrap{position:relative}
+.calbox{width:100%;max-height:65vh;background:#000;border-radius:10px;overflow:auto;line-height:0;overscroll-behavior:contain}
+#calinner{position:relative;width:100%}
+.calbox img{width:100%;display:block;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#calsvg{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+#loupe{position:absolute;top:8px;width:150px;height:150px;border:2px solid var(--accent);border-radius:50%;pointer-events:none;background:#000}
+.good{color:var(--good)} .bad{color:var(--bad)}
 #flash{position:fixed;inset:0;z-index:9;pointer-events:none;display:flex;align-items:center;justify-content:center;
 font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid var(--accent);animation:fl .4s steps(2) infinite}
 @keyframes fl{0%{background:#ffc80055;border-color:var(--accent);color:var(--accent)}50%{background:transparent;border-color:var(--bad);color:var(--bad)}}
@@ -233,6 +303,24 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <div class="row"><input id="pname" placeholder="Add a player" maxlength="14" autocomplete="off">
   <button onclick="addPlayer()">Add</button></div>
   <button class="start" onclick="act({type:'start'})">Start</button>
+  <div id="calwarn" class="warn hidden"></div>
+  <button id="calopen" class="calbtn hidden" onclick="openCal()">Calibrate cameras</button>
+</div>
+<div id="cal" class="hidden">
+  <div class="row" style="padding-right:96px"><h1 style="flex:1;white-space:nowrap">Calibrate</h1><button id="caldone" onclick="closeCal()">Done</button></div>
+  <div id="caltabs" class="tabs"></div>
+  <div class="calstep"><svg id="calguide" viewBox="-240 -240 480 480"></svg>
+    <div><div id="calmsg"></div><div class="small" id="calsub"></div></div></div>
+  <div class="row" style="margin-bottom:6px"><button onclick="calZoom(-1)">&minus;</button><b id="calz">1x</b>
+    <button onclick="calZoom(1)">+</button><span class="small">tap = place the next point &middot; drag a point = nudge it &middot; drag the picture = move around</span></div>
+  <div id="calwrap"><div class="calbox" id="calbox"><div id="calinner"><img id="calimg" alt=""><svg id="calsvg"></svg></div></div>
+    <canvas id="loupe" class="hidden" width="300" height="300"></canvas></div>
+  <div class="ctl">
+    <button onclick="calUndo()">Undo</button><button onclick="calReset()">Reset</button>
+    <button onclick="calPic()">New picture</button><button id="calsave" onclick="calSave()">Save</button>
+  </div>
+  <div class="status" id="calstat"></div>
+  <div class="small" id="calfoot"></div>
 </div>
 <div id="play" class="hidden"><div class="wrap">
   <div>
@@ -311,7 +399,11 @@ function boardSVG(marks){const R=[6.35,15.9,99,107,162,170];let s='';
  (marks||[]).forEach(m=>{s+=`<circle cx="${m.x}" cy="${-m.y}" r="9" fill="${col[m.i%3]}" stroke="#111" stroke-width="2"/>`});
  return s}
 function render(){
- const menu=S.screen==='menu';$('menu').classList.toggle('hidden',!menu);$('play').classList.toggle('hidden',menu);
+ if(S.screen==='calibrate'){$('menu').classList.add('hidden');$('play').classList.add('hidden');if(!calOpen)openCal();return}
+ const menu=S.screen==='menu';$('menu').classList.toggle('hidden',!menu||calOpen);$('play').classList.toggle('hidden',menu||calOpen);
+ const unc=S.uncalibrated||[];$('calopen').classList.toggle('hidden',!S.can_calibrate);
+ $('calwarn').classList.toggle('hidden',!unc.length);
+ $('calwarn').textContent=unc.length?'Not calibrated yet: '+unc.join(', ')+' - darts on '+(unc.length>1?'those cameras':'that camera')+" won't be scored":'';
  if(menu){const M=S.menu;
   $('modes').innerHTML=M.modes.map((m,i)=>`<button class="${i==M.mode?'on':''}" onclick="act({type:'mode',i:${i}})">${esc(m)}</button>`).join('');
   $('opts').innerHTML=M.opts.map((o,i)=>`<div class="opt"><span>${o[0]}</span><span><button onclick="act({type:'opt',row:${i+1},step:-1})">&lsaquo;</button> <b>${o[1]}</b> <button onclick="act({type:'opt',row:${i+1},step:1})">&rsaquo;</button></span></div>`).join('');
@@ -361,5 +453,95 @@ async function poll(){try{const ac=new AbortController(),to=setTimeout(()=>ac.ab
  const was=offline;offline=false;if(s.v!==V){V=s.v;S=s;calls(s);render();renderLog()}else if(was)renderLog()}
  catch(e){fails++;if(fails>=3&&!offline){offline=true;renderLog()}}
  showLost()}
+// ---------------------------------------------------------------- calibration
+let calOpen=false, CAL=null, calCam=null, calPts=[], calW=0, calH=0, calLines=null, calErr=null, drag=null;
+const NUDGE=0.35;      // dragging moves a point slower than the finger, for fine adjustment
+function calStat(t,c){$('calstat').textContent=t||'';$('calstat').className='status '+(c||'')}
+function openCal(){calOpen=true;$('cal').classList.remove('hidden');
+ $('menu').classList.add('hidden');$('play').classList.add('hidden');
+ const only=S.screen==='calibrate';$('caldone').classList.toggle('hidden',only);
+ $('calfoot').textContent=only?'When every camera is done, stop calibrate on the computer (Ctrl+C) and start play.':'';
+ loadCal(false)}
+function closeCal(){calOpen=false;drag=null;$('cal').classList.add('hidden');render()}
+async function loadCal(keep){
+ try{const r=await fetch('/calib/cams',{cache:'no-store'});if(!r.ok)throw 0;CAL=await r.json()}
+ catch(e){calStat("Couldn't load the cameras from the computer",'bad');return}
+ const cams=CAL.cameras;if(!cams.length){calStat('No cameras','bad');return}
+ if(!keep||!cams.some(c=>c.name===calCam)){const c=cams.find(c=>!c.saved)||cams[0];calCam=c.name;
+  if(!keep)return selectCam(cams.indexOf(c))}
+ calTabs()}
+function calTabs(){$('caltabs').innerHTML=CAL.cameras.map((c,i)=>
+ `<button class="${c.name===calCam?'on':''}" onclick="selectCam(${i})">${esc(c.name)}${c.saved?' &#10003;':''}</button>`).join('')}
+function selectCam(i){const c=CAL.cameras[i];calCam=c.name;drag=null;calLines=null;calErr=null;
+ const same=c.points&&c.image_size&&c.size&&c.image_size[0]==c.size[0]&&c.image_size[1]==c.size[1];
+ calPts=same?c.points.map(p=>[p[0],p[1]]):[];
+ calStat(c.saved?'saved '+c.saved+(same?' - these are the saved points':''):'');calTabs();calPic(true)}
+function calPic(first){const img=$('calimg');
+ img.onload=()=>{calW=img.naturalWidth;
+  if(first){calZ=0;const c=calPts.length?[calPts.reduce((a,p)=>a+p[0],0)/calPts.length/img.naturalWidth,
+   calPts.reduce((a,p)=>a+p[1],0)/calPts.length/img.naturalHeight]:[0.5,0.6];
+   requestAnimationFrame(()=>calZoom(window.innerWidth<700?2:0,c))}calH=img.naturalHeight;$('calsvg').setAttribute('viewBox',`0 0 ${calW} ${calH}`);
+  calDraw();if(calPts.length===5)calPreview()};
+ img.onerror=()=>calStat('No picture from '+calCam+' - is it plugged in?','bad');
+ img.src='/calib/frame?cam='+encodeURIComponent(calCam)+'&t='+Date.now()}
+function calU(){const w=$('calsvg').getBoundingClientRect().width;return w?calW/w:1}   // image px per screen px
+function calDraw(){if(!CAL)return;const u=calU(),n=calPts.length,T=CAL.targets;let s='';
+ if(calLines&&n===5)s+=calLines.map(l=>`<polyline points="${l.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#3cf03c" stroke-width="${1.5*u}"/>`).join('');
+ calPts.forEach((p,i)=>{const on=drag&&drag.i===i;
+  s+=`<circle cx="${p[0]}" cy="${p[1]}" r="${(on?14:10)*u}" fill="none" stroke="#ffc800" stroke-width="${2*u}"/>`+
+   `<circle cx="${p[0]}" cy="${p[1]}" r="${1.5*u}" fill="#ffc800"/>`+
+   `<text x="${p[0]+12*u}" y="${p[1]-12*u}" fill="#ffc800" font-size="${16*u}" font-weight="800" stroke="#000" stroke-width="${3*u}" paint-order="stroke">${i+1}</text>`});
+ $('calsvg').innerHTML=s;
+ $('calguide').innerHTML=boardSVG([])+T.map((t,i)=>`<circle cx="${t.mm[0]}" cy="${-t.mm[1]}" r="${i===n?24:12}" fill="${i<n?'#5ad25a':i===n?'#ffc800':'#777'}" stroke="#000" stroke-width="4"/>`).join('');
+ if(n<5){$('calmsg').textContent=`Tap ${n+1} of 5: ${T[n].name}`;
+  $('calsub').textContent=n?'Drag a point to nudge it (it moves slowly so you can be exact).':'Tap the exact spot on the picture, then drag to fine tune.'}
+ else{const q=calErr==null?'':calErr<2?'good':calErr<5?'ok':'check the points';
+  $('calmsg').innerHTML=calErr==null?'All 5 placed':`Fit ${calErr} px <span class="${calErr<5?'good':'bad'}">${q}</span>`;
+  $('calsub').textContent='Drag points until the green wires sit exactly on the real wires, then Save.'}
+ $('calsave').disabled=n<5}
+function calPos(e){const r=$('calsvg').getBoundingClientRect();
+ return [Math.min(calW,Math.max(0,(e.clientX-r.left)*calW/r.width)),Math.min(calH,Math.max(0,(e.clientY-r.top)*calH/r.height))]}
+function calLoupe(){const c=$('loupe');if(!drag){c.classList.add('hidden');return}
+ const p=calPts[drag.i],box=$('calbox').getBoundingClientRect(),r=$('calsvg').getBoundingClientRect();
+ const left=r.left+(p[0]/calW)*r.width-box.left>box.width/2;c.style.left=left?'8px':'';c.style.right=left?'':'8px';
+ const g=c.getContext('2d'),S2=c.width,src=36;   // 36 camera pixels across the loupe
+ g.imageSmoothingEnabled=false;g.fillStyle='#000';g.fillRect(0,0,S2,S2);
+ g.drawImage($('calimg'),p[0]-src/2,p[1]-src/2,src,src,0,0,S2,S2);
+ g.strokeStyle='#ffc800';g.lineWidth=2;g.beginPath();g.moveTo(S2/2-30,S2/2);g.lineTo(S2/2+30,S2/2);g.moveTo(S2/2,S2/2-30);g.lineTo(S2/2,S2/2+30);g.stroke();
+ c.classList.remove('hidden')}
+const ZOOMS=[1,1.5,2,3,4];let calZ=0;
+function calZoom(d,center){const bx=$('calbox'),inner=$('calinner'),w0=inner.offsetWidth||1,h0=inner.offsetHeight||1;
+ const c=center||[(bx.scrollLeft+bx.clientWidth/2)/w0,(bx.scrollTop+bx.clientHeight/2)/h0];
+ calZ=Math.max(0,Math.min(ZOOMS.length-1,calZ+d));inner.style.width=ZOOMS[calZ]*100+'%';$('calz').textContent=ZOOMS[calZ]+'x';
+ bx.scrollLeft=c[0]*inner.offsetWidth-bx.clientWidth/2;bx.scrollTop=c[1]*inner.offsetHeight-bx.clientHeight/2;calDraw()}
+let ptr=null;
+(function(){const sv=$('calsvg'),bx=$('calbox');
+ sv.addEventListener('pointerdown',e=>{if(!calW||ptr)return;const p=calPos(e),u=calU();let near=-1,bd=24*u;
+  calPts.forEach((q,i)=>{const d=Math.hypot(q[0]-p[0],q[1]-p[1]);if(d<bd){bd=d;near=i}});
+  ptr={id:e.pointerId,x:e.clientX,y:e.clientY,p,near,moved:false,sl:bx.scrollLeft,st:bx.scrollTop,o:near>=0?calPts[near].slice():null};
+  try{sv.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault()});
+ sv.addEventListener('pointermove',e=>{if(!ptr||e.pointerId!==ptr.id)return;const dx=e.clientX-ptr.x,dy=e.clientY-ptr.y;
+  if(!ptr.moved&&Math.hypot(dx,dy)>6){ptr.moved=true;if(ptr.near>=0){drag={i:ptr.near};calLoupe()}}
+  if(!ptr.moved)return;
+  if(drag){const u=calU();calPts[drag.i]=[Math.min(calW,Math.max(0,ptr.o[0]+dx*u*NUDGE)),Math.min(calH,Math.max(0,ptr.o[1]+dy*u*NUDGE))];
+   calLines=null;calDraw();calLoupe()}
+  else{bx.scrollLeft=ptr.sl-dx;bx.scrollTop=ptr.st-dy}});
+ const up=e=>{if(!ptr||e.pointerId!==ptr.id)return;const was=ptr;ptr=null;
+  if(!was.moved&&calPts.length<5){calPts.push(was.p);calLines=null;calErr=null}
+  const changed=drag||!was.moved;drag=null;calLoupe();calDraw();if(changed&&calPts.length===5)calPreview()};
+ sv.addEventListener('pointerup',up);sv.addEventListener('pointercancel',up);
+ window.addEventListener('resize',()=>{if(calOpen)calDraw()})})();
+async function calPost(path){const r=await fetch(path,{method:'POST',body:JSON.stringify({cam:calCam,points:calPts})});
+ const j=await r.json().catch(()=>({}));if(!r.ok||!j.ok)throw new Error(j.error||'the computer said no');return j}
+async function calPreview(){const cam=calCam;try{const j=await calPost('/calib/preview');
+ if(cam===calCam&&calPts.length===5){calLines=j.lines;calErr=j.err;calDraw()}}catch(e){calStat(e.message,'bad')}}
+function calUndo(){calPts.pop();calLines=null;calErr=null;calDraw()}
+function calReset(){calPts=[];calLines=null;calErr=null;calStat('');calDraw()}
+async function calSave(){if(calPts.length<5)return;
+ try{const j=await calPost('/calib/save');calStat(`Saved ${calCam} (fit ${j.err} px)`,'good');
+  await loadCal(true);const next=CAL.cameras.findIndex(c=>!c.saved);
+  if(next>=0)setTimeout(()=>{selectCam(next);calStat('Saved - now '+CAL.cameras[next].name,'good')},900);
+  else calStat('All cameras calibrated'+(S.screen==='calibrate'?'':' - tap Done'),'good')}
+ catch(e){calStat("Couldn't save: "+e.message,'bad')}}
 updV();setInterval(poll,400);poll();
 </script></body></html>"""
