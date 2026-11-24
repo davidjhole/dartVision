@@ -3,6 +3,10 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- **Pi log fixed:** `journalctl --user -u dartvision` said "No journal files were found" because Pi OS keeps
+  its log in memory only. `setup_pi.sh` now keeps the log on disk (capped at 100 MB), and the service
+  prints each line straight away. A new `scripts/setup_pi.sh log` shows the log. On a Pi that's already
+  set up, run `scripts/setup_pi.sh service` once.
 - **Quicker scores on a Raspberry Pi.** The pictures of each throw are saved in the background (eight
   PNGs per dart were holding the score up for a couple of seconds on a Pi), finding the dart is about
   3x faster, and the motion check only shrinks each frame instead of blurring it at full size.
