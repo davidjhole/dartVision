@@ -22,6 +22,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 *Mac:* the first time a camera opens, allow camera access for Terminal (System Settings → Privacy & Security → Camera).
+*Raspberry Pi OS Lite* (or any Linux without a desktop): if `import cv2` fails with `libGL.so.1: cannot open shared object file`, run `sudo apt install libgl1 libglib2.0-0`.
 *Raspberry Pi:* if `opencv-python` won't install, use `sudo apt install python3-opencv` and create the venv with `--system-site-packages`.
 
 ## 2. Cameras
