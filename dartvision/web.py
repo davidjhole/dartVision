@@ -24,11 +24,18 @@ _actions = queue.Queue()
 _voice_seen = {"t": 0.0}     # last time a page with its voice switched on asked for the state
 VOICE_TIMEOUT = 3.0
 _calib = {"h": None}
+_camsetup = {"h": None}
 
 
 def set_calibrator(c):
     """Let the page calibrate the cameras (None turns it off)."""
     _calib["h"] = c
+
+
+def set_camsetup(c):
+    """Let the page set up the cameras (camsetup.CameraSetup; None turns it off). Its pictures are
+    served at /setup/frame?index=N; the page's choices come in as setup_* actions."""
+    _camsetup["h"] = c
 
 
 def publish(data):
@@ -112,6 +119,13 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, PAGE, "text/html; charset=utf-8")
         elif self.path.startswith("/calib/"):
             self._calib_get()
+        elif self.path.startswith("/setup/frame"):
+            c = _camsetup["h"]
+            idx = parse_qs(urlparse(self.path).query).get("index", [""])[0]
+            jpg = c.frame_jpeg(idx) if c else None
+            if jpg is None:
+                return self._send(404, "no picture", "text/plain")
+            self._send(200, jpg, "image/jpeg")
         else:
             self._send(404, "not found", "text/plain")
 
@@ -288,6 +302,15 @@ body{padding-bottom:calc(52px + env(safe-area-inset-bottom))}
 #calsvg{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
 #loupe{position:absolute;top:8px;width:150px;height:150px;border:2px solid var(--accent);border-radius:50%;pointer-events:none;background:#000}
 .good{color:var(--good)} .bad{color:var(--bad)}
+#setup{max-width:1100px;margin:auto}
+.scams{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin:10px 0}
+.scam{background:var(--panel);border-radius:14px;padding:10px;border:2px solid transparent}
+.scam.on{border-color:var(--good)}
+.scam canvas{width:100%;display:block;background:#000;border-radius:8px;aspect-ratio:16/9}
+.scam .row{justify-content:space-between;margin-top:8px}
+.scam .nm{font-weight:800}
+.scam label{display:flex;gap:8px;align-items:center;font-weight:800;font-size:17px}
+.scam input[type=checkbox]{width:24px;height:24px}
 #flash{position:fixed;inset:0;z-index:9;pointer-events:none;display:flex;align-items:center;justify-content:center;
 font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid var(--accent);animation:fl .4s steps(2) infinite}
 @keyframes fl{0%{background:#ffc80055;border-color:var(--accent);color:var(--accent)}50%{background:transparent;border-color:var(--bad);color:var(--bad)}}
@@ -305,8 +328,24 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <button class="start" onclick="act({type:'start'})">Start</button>
   <div class="sub">Light</div>
   <button id="tflash" style="width:100%;font-weight:800;color:var(--accent)" onclick="act({type:'test_flash'})">Test 180 flash</button>
+  <div class="sub">Cameras</div>
+  <div id="camwarn" class="warn hidden">No cameras set up yet - tap Set up cameras</div>
+  <div id="setnote" class="small"></div>
+  <button id="setopen" class="calbtn hidden" onclick="act({type:'setup_open'})">Set up cameras</button>
   <div id="calwarn" class="warn hidden"></div>
   <button id="calopen" class="calbtn hidden" onclick="openCal()">Calibrate cameras</button>
+</div>
+<div id="setup" class="hidden">
+  <div class="row" style="padding-right:96px"><h1 style="flex:1">Cameras</h1></div>
+  <div class="status" id="setmsg"></div>
+  <div class="small">Tick the cameras on the board and turn each one so the <b>board is at the bottom</b> of its
+   picture (darts pointing up). Keep each camera in the same USB port afterwards - that's how it's recognised.</div>
+  <div id="scams" class="scams"></div>
+  <div class="ctl" style="grid-template-columns:repeat(3,1fr)">
+    <button onclick="setScan()">Look again</button>
+    <button onclick="act({type:'setup_cancel'})">Cancel</button>
+    <button id="setsave" style="background:var(--good);color:#111;font-weight:800" onclick="setSave()">Save</button>
+  </div>
 </div>
 <div id="cal" class="hidden">
   <div class="row" style="padding-right:96px"><h1 style="flex:1;white-space:nowrap">Calibrate</h1><button id="caldone" onclick="closeCal()">Done</button></div>
@@ -401,8 +440,11 @@ function boardSVG(marks){const R=[6.35,15.9,99,107,162,170];let s='';
  (marks||[]).forEach(m=>{s+=`<circle cx="${m.x}" cy="${-m.y}" r="9" fill="${col[m.i%3]}" stroke="#111" stroke-width="2"/>`});
  return s}
 function render(){
+ const setup=S.screen==='setup';$('setup').classList.toggle('hidden',!setup);
+ if(setup){if(calOpen)closeCal();$('menu').classList.add('hidden');$('play').classList.add('hidden');renderSetup();return}
  if(S.screen==='calibrate'){$('menu').classList.add('hidden');$('play').classList.add('hidden');if(!calOpen)openCal();return}
  const menu=S.screen==='menu';$('menu').classList.toggle('hidden',!menu||calOpen);$('play').classList.toggle('hidden',menu||calOpen);
+ $('setopen').classList.toggle('hidden',!S.can_setup);$('camwarn').classList.toggle('hidden',!(S.can_setup&&S.no_cameras));$('setnote').textContent=S.setup_note||'';
  const unc=S.uncalibrated||[];$('calopen').classList.toggle('hidden',!S.can_calibrate);
  $('calwarn').classList.toggle('hidden',!unc.length);
  $('calwarn').textContent=unc.length?'Not calibrated yet: '+unc.join(', ')+' - darts on '+(unc.length>1?'those cameras':'that camera')+" won't be scored":'';
@@ -545,5 +587,29 @@ async function calSave(){if(calPts.length<5)return;
   if(next>=0)setTimeout(()=>{selectCam(next);calStat('Saved - now '+CAL.cameras[next].name,'good')},900);
   else calStat('All cameras calibrated'+(S.screen==='calibrate'?'':' - tap Done'),'good')}
  catch(e){calStat("Couldn't save: "+e.message,'bad')}}
+// ---------------------------------------------------------------- camera setup
+let SET={at:-1,cams:[]};
+function setScan(){act({type:'setup_scan'})}
+function renderSetup(){const st=S.setup||{};
+ $('setmsg').textContent=st.message||'';$('setmsg').className='status '+(/^Not saved|No cameras/.test(st.message||'')?'bad':'');
+ const busy=!!st.scanning;$('setsave').disabled=busy||!SET.cams.some(c=>c.use);
+ if(st.scanned_at===SET.at&&!busy)return;
+ if(busy){$('scams').innerHTML='';SET.at=-1;$('setsave').disabled=true;return}
+ SET={at:st.scanned_at,cams:(st.cameras||[]).map(c=>({...c}))};
+ $('scams').innerHTML=SET.cams.map((c,i)=>`<div class="scam" id="sc${i}"><canvas id="scv${i}" width="320" height="180"></canvas>
+  <div class="row"><label><input type="checkbox" id="scu${i}" onchange="setUse(${i},this.checked)"> Use</label>
+  <button onclick="setRot(${i})">Turn &#8635;</button></div>
+  <div class="small"><span class="nm">${esc(c.cam||'new camera')}</span> &middot; ${esc(c.name)} &middot; ${c.width}x${c.height}${c.builtin?' &middot; this computer&#39;s own camera':''}</div></div>`).join('');
+ SET.cams.forEach((c,i)=>{const im=new Image();im.onload=()=>{c.img=im;setDraw(i)};im.src='/setup/frame?index='+c.index+'&t='+st.scanned_at;setDraw(i)});
+ $('setsave').disabled=!SET.cams.some(c=>c.use)}
+function setDraw(i){const c=SET.cams[i],cv=$('scv'+i);if(!cv)return;const g=cv.getContext('2d');
+ $('sc'+i).classList.toggle('on',!!c.use);$('scu'+i).checked=!!c.use;
+ g.fillStyle='#000';g.fillRect(0,0,cv.width,cv.height);if(!c.img)return;
+ const r=c.rotate%180!==0,iw=r?c.img.height:c.img.width,ih=r?c.img.width:c.img.height,k=Math.min(cv.width/iw,cv.height/ih);
+ g.save();g.translate(cv.width/2,cv.height/2);g.rotate(c.rotate*Math.PI/180);
+ g.drawImage(c.img,-c.img.width*k/2,-c.img.height*k/2,c.img.width*k,c.img.height*k);g.restore()}
+function setUse(i,on){SET.cams[i].use=on;setDraw(i);$('setsave').disabled=!SET.cams.some(c=>c.use)}
+function setRot(i){const c=SET.cams[i];c.rotate=(c.rotate+90)%360;setDraw(i)}
+function setSave(){act({type:'setup_save',cams:SET.cams.map(c=>({index:c.index,use:!!c.use,rotate:c.rotate}))})}
 updV();setInterval(poll,400);poll();
 </script></body></html>"""

@@ -52,9 +52,10 @@ def grab(cams):
 # ------------------------------------------------------------------ commands
 def cmd_setup(args):
     from .cameras import list_cameras
+    from .camsetup import candidate_indexes
     from . import devices
     print("Looking for cameras ...")
-    found = list_cameras(args.max_index)
+    found = list_cameras(args.max_index, candidate_indexes(args.max_index))
     if not found:
         print("No cameras found. Check USB connections (and on macOS, camera permission for your terminal).")
         return
@@ -229,7 +230,7 @@ def cmd_play(args):
     from .caller import TurnWatcher, Speaker, phrase
     from .lights import Lights
     cfg = load_config(args.config)
-    cams = open_cameras(cfg, config_path=args.config)
+    cams = open_cameras(cfg, config_path=args.config, allow_none=not args.no_web)
     cals = {c.name: load_calibration(c.name) for c in cams}
     missing = [n for n, c in cals.items() if c is None]
     if missing:
@@ -403,10 +404,71 @@ def cmd_play(args):
         left = [c.name for c in cams if c.name not in cals]
         print(f"{name} calibrated from the web page" + (f" - still to do: {', '.join(left)}" if left else ""))
 
+    def use_cameras(new):
+        """Swap in a new set of cameras (after the camera setup page), keeping the same list and
+        dict objects so everything that holds them sees the change."""
+        nonlocal tracker, last, marks
+        cams[:] = new
+        cals.clear()
+        cals.update({c.name: cal for c in cams for cal in [load_calibration(c.name)] if cal})
+        frames = grab(cams)
+        tracker = ThrowTracker(cals, cfg["detection"], {n: f.shape for n, f in frames.items()})
+        tracker.reset(frames)
+        last, marks = {}, []
+        if url:
+            from .calibrate import WebCalibrator
+            web.set_calibrator(WebCalibrator(cams))
+
+    def setup_action(t, a):
+        """The camera setup page: hand the cameras over, look for cameras, save, or go back."""
+        nonlocal setup_scan, setup_note
+        if t == "setup_open":
+            if screen != "menu" or camsetup is None:
+                return
+            if not setup_mode():
+                for c in cams:
+                    c.close()
+                cams.clear()
+                cals.clear()
+                web.set_calibrator(None)
+                camsetup.active = True
+            camsetup.scanning, camsetup.message, setup_scan, setup_note = True, "Looking for cameras ...", True, ""
+        elif not setup_mode():
+            return
+        elif t == "setup_scan":
+            camsetup.scanning, camsetup.message, setup_scan = True, "Looking for cameras ...", True
+        elif t in ("setup_save", "setup_cancel"):
+            if t == "setup_save":
+                try:
+                    setup_note = camsetup.apply(a.get("cams"))
+                except ValueError as e:
+                    camsetup.message = f"Not saved: {e}"
+                    return
+            cfg["cameras"] = load_config(args.config).get("cameras") or []
+            camsetup.active = False
+            use_cameras(open_cameras(cfg, config_path=args.config, allow_none=True))
+            left = [c.name for c in cams if c.name not in cals]
+            if t == "setup_save" and left:
+                setup_note += " - now calibrate " + ", ".join(left)
+            elif t == "setup_cancel":
+                setup_note = "Nothing changed"
+            opened = {c.name for c in cams}
+            lost = [c["name"] for c in cfg["cameras"] if c["name"] not in opened]
+            if lost:
+                setup_note += " - couldn't open " + ", ".join(lost)
+
+    def setup_mode():
+        return camsetup is not None and camsetup.active
+
     def act(a):
         """One user action, from a key, a click or the web page."""
         nonlocal screen, status, marks, last, show_cams, typing
         t = a.get("type")
+        if str(t).startswith("setup_"):
+            setup_action(t, a)
+            return
+        if setup_mode():
+            return                      # cameras are handed over to the setup page
         if t == "calibrated":
             recalibrated(str(a.get("cam", "")))
             return
@@ -453,7 +515,10 @@ def cmd_play(args):
 
     def web_state():
         common = {"log": logbuf.for_web(), "calls": calls, "web_voice": bool(vcfg["enabled"]) and vout != "computer",
-                  "can_calibrate": True, "uncalibrated": [c.name for c in cams if c.name not in cals]}
+                  "can_calibrate": bool(cams), "uncalibrated": [c.name for c in cams if c.name not in cals],
+                  "can_setup": camsetup is not None, "no_cameras": not cams, "setup_note": setup_note}
+        if setup_mode():
+            return {"screen": "setup", "status": status, "setup": camsetup.state(), **common}
         if screen == "menu":
             return {"screen": "menu", "status": status,
                     "menu": menu.web_state(), "note": UPDATE.get("note", ""), **common}
@@ -469,12 +534,16 @@ def cmd_play(args):
             "table": game.table(), "marks": mk}}
 
     url = None
+    camsetup, setup_scan, setup_note = None, False, ""
     if not args.no_web:
         from . import web
         url = web.start(args.port)
         if url:
             from .calibrate import WebCalibrator
+            from .camsetup import CameraSetup
             web.set_calibrator(WebCalibrator(cams))
+            camsetup = CameraSetup(args.config)
+            web.set_camsetup(camsetup)
             print(f"\nScoreboard / remote: open  {url}  on a phone, iPad or TV (same Wi-Fi)\n")
     headless = args.headless
     if headless:
@@ -523,13 +592,17 @@ def cmd_play(args):
         run_caller()
         if url:
             web.publish(web_state())
+            if setup_scan:
+                setup_scan = False
+                camsetup.scan()
+                web.publish(web_state())
         if not running:
             running = True
             if cfg["update"].get("auto"):
                 from . import autoupdate
                 autoupdate.started_ok()          # made it into the game loop: keep this version
         if headless:
-            time.sleep(0.005)
+            time.sleep(0.005 if cams else 0.05)
             continue
         W, H_win = ui.window_size(WIN)
         bar_h = ui.info_bar_height(H_win)

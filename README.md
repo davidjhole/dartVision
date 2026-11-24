@@ -26,22 +26,29 @@ pip install -r requirements.txt
 **Raspberry Pi (no screen needed):** flash **Raspberry Pi OS Lite (64-bit)** with Raspberry Pi Imager
 (in its settings: hostname `dartvision`, your user, Wi-Fi, and *Enable SSH*), `ssh` in, then instead of the steps above:
 ```
-sudo apt install -y git
+sudo apt update && sudo apt install -y git
 git clone https://github.com/davidjhole/dartVision.git
 cd dartVision
 scripts/setup_pi.sh
 ```
-It installs what the Pi needs (including `libgl1`, which OpenCV needs and Lite leaves out), makes the `.venv`
-and installs the Python packages. Then do 2. and 3. below (calibrate opens a window: connect with `ssh -Y` from a computer
-with an X server - XQuartz on a Mac, VcXsrv on Windows - and press F to freeze the picture), and finish with `scripts/setup_pi.sh service`
-so it starts on boot with no screen - the phone page is at `http://dartvision.local:8080`
-(`scripts/setup_pi.sh remove` undoes that). Stop it with `systemctl --user stop dartvision` before running
-`calibrate` or `preview`: only one program can use the cameras.
+That's it. It installs what the Pi needs (including `libgl1`, which OpenCV needs and Lite leaves out), makes the
+`.venv`, installs the Python packages and starts dartvision, now and on every boot, with no screen. Then, on a phone
+or PC on the same Wi-Fi, open **`http://dartvision.local:8080`** and in the menu tap **Set up cameras** (2. below),
+then **Calibrate cameras** (3. below; easier on a PC). Nothing else is needed on the Pi.
+- Log: `journalctl --user -u dartvision -f`. Stop / start: `systemctl --user stop dartvision` / `start`
+  (stop it before running `setup`, `calibrate` or `preview` in a terminal: only one program can use the cameras).
+- `scripts/setup_pi.sh remove` stops it starting on boot.
+
 If `opencv-python` won't install, use `sudo apt install python3-opencv` and run `scripts/setup_pi.sh` again.
 
 ## 2. Cameras
 
-Plug the cameras into **at least two different USB ports** (or a powered USB 3 hub). Then:
+Plug the cameras into **at least two different USB ports** (or a powered USB 3 hub).
+
+**From a phone, iPad or PC:** with `play` running, tap **Set up cameras** in the menu. It shows a picture
+from every camera it finds: tick the ones on the board, tap **Turn** until the board is at the bottom of each
+picture, and **Save**. They're used straight away. (Turning a camera that was calibrated sets its old
+calibration aside, so calibrate it again.) **Or in a terminal:**
 
 ```
 python -m dartvision setup              # finds cameras, writes config.yaml

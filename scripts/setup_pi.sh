@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Raspberry Pi / Debian setup for dartvision.
 #
-#   scripts/setup_pi.sh            install system packages, the .venv and the Python packages
-#   scripts/setup_pi.sh service    start dartvision (play, no screen) on boot - after calibrating
+#   scripts/setup_pi.sh            everything: system packages, the .venv, the Python packages, and
+#                                  start dartvision on boot (no screen) - then set up the cameras
+#                                  and calibrate from the phone / PC page
+#   scripts/setup_pi.sh service    only (re)install the start-on-boot service
 #   scripts/setup_pi.sh remove     stop it starting on boot
 #
 # Safe to run again. Run it as your normal user (not with sudo); it asks for sudo when it needs it.
@@ -32,23 +34,11 @@ install() {
     fi
     "$VENV/bin/python" -m pip install -q -r "$ROOT/requirements.txt"
     "$VENV/bin/python" -c "import cv2; print('OpenCV', cv2.__version__, 'OK')"
-
-    echo
-    echo "Done. Next, with the cameras plugged in:"
-    echo "  cd $ROOT && source .venv/bin/activate"
-    echo "  python -m dartvision setup        # find the cameras"
-    echo "  python -m dartvision calibrate    # needs a window (VNC or ssh -Y) until calibration is on the phone"
-    echo "  scripts/setup_pi.sh service       # then start it on boot"
 }
 
 service() {
     if [ ! -x "$VENV/bin/python" ]; then
         echo "Run scripts/setup_pi.sh first (no .venv yet)." >&2
-        exit 1
-    fi
-    if ! ls "$ROOT"/calib/*.json >/dev/null 2>&1; then
-        echo "No camera is calibrated yet (nothing in calib/). Run  python -m dartvision calibrate  first," >&2
-        echo "otherwise 'play' stops straight away and the service keeps restarting." >&2
         exit 1
     fi
     mkdir -p "$UNIT_DIR"
@@ -73,10 +63,14 @@ UNITEOF
     # start at boot without anyone logging in
     sudo loginctl enable-linger "$USER"
     echo
-    echo "dartvision now starts on boot. Phone: http://$(hostname).local:8080"
+    echo "dartvision is running and starts on boot."
+    echo "Open  http://$(hostname).local:8080  on a phone or PC on the same Wi-Fi, then:"
+    echo "  Set up cameras  -> tick the cameras, turn them board-down, Save"
+    echo "  Calibrate cameras -> 5 points on each camera (easier on a PC), Save"
     echo "  log:        journalctl --user -u dartvision -f"
     echo "  stop/start: systemctl --user stop dartvision  /  systemctl --user start dartvision"
-    echo "  (stop it before running calibrate or preview - only one program can use the cameras)"
+    echo "  (stop it before running  python -m dartvision calibrate / preview / setup  in a terminal -"
+    echo "   only one program can use the cameras)"
 }
 
 remove() {
@@ -87,7 +81,7 @@ remove() {
 }
 
 case "${1:-install}" in
-    install) install ;;
+    install) install; service ;;
     service) service ;;
     remove)  remove ;;
     *) echo "usage: $0 [install|service|remove]" >&2; exit 2 ;;
