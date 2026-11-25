@@ -3,6 +3,16 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- **The Pi's health in the log.** Every 10 minutes, and straight away when something changes, a
+  `health:` line gives the CPU temperature, whether the Pi is slowing itself down or getting too little
+  power (`vcgencmd get_throttled` in plain words, e.g. `0x80000` = "since boot: hit the soft temperature
+  limit"), CPU speed and use (and how much of it is dartvision), load, memory, free disk and the fan.
+- **A more useful log screen** (Settings > Show log): a health card at the top, filters (All, Problems,
+  Timing, Health, Other) with counts, the whole log (3000 lines kept, was 300), and **Copy for sharing**
+  and **Download**: one text report with the version, computer, settings, health history, a dart-speed
+  summary and the log. Settings shows a one-line health summary too.
+- The yellow "updated to ..." line is gone from the start screen; it's under the version in Settings
+  (and in the log).
 - **Accuracy in Settings:** how many darts it read right this session and over all saved darts
   (from the labels made while playing - corrections, typed-in and undone darts; nothing is re-run),
   and **Darts it got wrong**: each one with what every camera saw before and after, and where that

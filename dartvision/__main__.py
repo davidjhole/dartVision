@@ -260,7 +260,13 @@ def cmd_play(args):
     tracker = ThrowTracker(cals, cfg["detection"], {n: f.shape for n, f in frames.items()})
     tracker.reset(frames)
     from .timing import Pace
+    from . import health
     pace = Pace()
+    hcfg = cfg.get("health") or {}
+    monitor = None
+    if hcfg.get("enabled", True):
+        monitor = health.Monitor(log_every_min=hcfg.get("log_every_min", 10),
+                                 disk_path=cfg["record_dir"] if os.path.isdir(cfg["record_dir"]) else ".").start()
     rcfg = cfg["record"]
     save_what = str(rcfg.get("save", "all")).lower()
     rec = None if args.no_record or save_what in ("off", "none", "false", "no") else \
@@ -592,7 +598,8 @@ def cmd_play(args):
             show_cams = not show_cams
 
     def web_state():
-        common = {"log": logbuf.for_web(), "calls": calls, "web_voice": bool(vcfg["enabled"]) and vout != "computer",
+        common = {"log": logbuf.for_web(40), "health": monitor.for_web() if monitor else None,
+                  "update_note": UPDATE.get("note", ""), "calls": calls, "web_voice": bool(vcfg["enabled"]) and vout != "computer",
                   "can_calibrate": bool(cams), "uncalibrated": [c.name for c in cams if c.name not in cals],
                   "can_setup": camsetup is not None, "no_cameras": not cams, "setup_note": setup_note,
                   "ready": ready(), "not_ready": "" if ready() else not_ready_reason(),
@@ -601,7 +608,7 @@ def cmd_play(args):
             return {"screen": "setup", "status": status, "setup": camsetup.state(), **common}
         if screen == "menu":
             return {"screen": "menu", "status": status,
-                    "menu": menu.web_state(), "note": UPDATE.get("note", ""), **common}
+                    "menu": menu.web_state(), **common}
         mk = [{"x": round(m[0], 1), "y": round(m[1], 1), "i": i} for i, m in enumerate(marks) if m]
         return {"screen": "play", "status": status, **common, "game": {
             "title": getattr(game, "mode_title", game.name) +
@@ -626,6 +633,9 @@ def cmd_play(args):
             web.set_calibrator(WebCalibrator(cams))
             camsetup = CameraSetup(args.config)
             web.set_camsetup(camsetup)
+            web.set_report(lambda n: health.report(
+                version, cfg, calibrated=list(cals), monitor=monitor, max_lines=n,
+                extra={"speed now": pace.speeds(cams), "screen": screen}))
             web.set_recordings(cfg["record_dir"], rec.dir if rec else None, save_what)
             print(f"\nScoreboard / remote: open  {url}  on a phone, iPad or TV (same Wi-Fi)\n")
     headless = args.headless
@@ -748,7 +758,7 @@ def cmd_play(args):
         if time.time() - flash_at < 3.0:
             ui.draw_flash(out, time.time() - flash_at)
         if show_log:
-            ui.draw_log_panel(out, logbuf.lines())
+            ui.draw_log_panel(out, logbuf.lines(200))
         out = np.vstack([out, ui.draw_info_bar(W, bar_h, logbuf.last(), show_log)])
         hits["log"] = (0, H, W, H_win)
         cv2.imshow(WIN, out)
@@ -1002,6 +1012,7 @@ def main(argv=None):
             st = autoupdate._load(autoupdate.ROOT)
             if st.get("pending") and st.get("new"):
                 UPDATE["note"] = "updated to " + autoupdate._short(autoupdate.ROOT, st["new"])
+                print(UPDATE["note"].capitalize())
         print("Checking GitHub for updates ...")
         res, msg = autoupdate.update(branch=cfg["update"].get("branch", "main"))
         print({"updated": "Updated:", "up_to_date": "Up to date:", "offline": "Update check skipped (offline):",

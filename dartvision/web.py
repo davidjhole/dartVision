@@ -25,7 +25,13 @@ _voice_seen = {"t": 0.0}     # last time a page with its voice switched on asked
 VOICE_TIMEOUT = 3.0
 _calib = {"h": None}
 _camsetup = {"h": None}
+_report = {"fn": None}
 _rec = {"root": None, "current": None, "save": "all"}
+
+
+def set_report(fn):
+    """fn(max_lines) -> the text bundle served at /report.txt (Settings > Log: Download / Copy)."""
+    _report["fn"] = fn
 
 
 def set_calibrator(c):
@@ -125,6 +131,36 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, body, "application/json")
         elif self.path in ("/", "/index.html"):
             self._send(200, PAGE, "text/html; charset=utf-8")
+        elif self.path.startswith("/log.json"):
+            from . import logbuf
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                n = max(1, min(logbuf.MAX, int(q.get("n", ["1000"])[0])))
+            except ValueError:
+                n = 1000
+            self._json(200, logbuf.for_web(n))
+        elif self.path.startswith("/report.txt"):
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                n = int(q.get("lines", ["0"])[0]) or None
+            except ValueError:
+                n = None
+            fn = _report["fn"]
+            if fn is None:
+                from . import health
+                text = health.report(max_lines=n)
+            else:
+                text = fn(n)
+            b = text.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.send_header("Cache-Control", "no-store")
+            if "download=1" in self.path:
+                stamp = time.strftime("%Y%m%d-%H%M")
+                self.send_header("Content-Disposition", f'attachment; filename="dartvision-report-{stamp}.txt"')
+            self.end_headers()
+            self.wfile.write(b)
         elif self.path.startswith("/calib/"):
             self._calib_get()
         elif self.path.startswith("/rec/"):
@@ -300,6 +336,13 @@ table.cr td.n{color:var(--text)} table.cr td.closed{color:var(--dim)}
 .logp{max-height:85vh;display:flex;flex-direction:column}
 #logl{overflow:auto;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;background:#111;border-radius:10px;padding:10px;margin:8px 0;flex:1;min-height:200px}
 #logl div{white-space:pre-wrap;word-break:break-word}
+.lv-good{color:var(--good)!important}
+.hcard{background:var(--panel);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.45}
+.hcard b{font-size:20px}
+#lfilt button{padding:7px 10px;font-size:14px}
+.lbtns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.lbtns a{display:block;text-align:center;text-decoration:none;color:inherit;border-radius:12px;background:#3a3f45;padding:12px 14px}
+#lcopy{width:100%;height:120px;margin-top:8px;font:11px ui-monospace,Menlo,Consolas,monospace;background:#111;color:var(--text);border-radius:10px;border:1px solid var(--line)}
 .kp{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:10px}
 .kp button{padding:14px 0;font-weight:800;font-size:19px}
 .mult{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
@@ -347,7 +390,6 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
 <div id="flash" class="hidden">180</div>
 <div id="menu" class="hidden">
   <div class="row"><h1 style="flex:1">dartvision</h1><button class="vbtn" onclick="toggleVoice()">Voice off</button><button onclick="openSettings()">&#9881; Settings</button></div>
-  <div class="status" id="mstatus"></div>
   <div id="needset" class="hidden"><div class="panel" style="width:100%;margin:10px 0">
     <h2>Set up before playing</h2><div id="needmsg" class="title"></div>
     <button class="start" id="needbtn" style="background:var(--good);color:#111" onclick="needGo()"></button></div></div>
@@ -376,10 +418,12 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <div class="opt"><span>Caller's voice on this phone / screen</span><button class="vbtn" onclick="toggleVoice()">Voice off</button></div>
   <div class="sub">Light</div>
   <button id="tflash" class="calbtn" style="font-weight:800;color:var(--accent)" onclick="act({type:'test_flash'})">Test 180 flash</button>
-  <div class="sub">Log</div>
+  <div class="sub">Log and health</div>
+  <div class="opt logrow" onclick="toggleLog()"><span id="hsum" style="flex:1;min-width:0;font-size:14px">health: not measured yet</span></div>
   <div class="opt logrow" onclick="toggleLog()"><span id="infot">connecting...</span><button>Show log</button></div>
   <div class="sub">dartvision</div>
   <div class="opt"><span>Version</span><b id="ver" style="color:var(--text)"></b></div>
+  <div class="small" id="updnote"></div>
   <button class="calbtn" onclick="if(confirm('Restart dartvision? It checks for an update first, so give it a minute.'))act({type:'restart'})">Restart and update</button>
   <button id="rebootb" class="calbtn hidden" onclick="if(confirm('Reboot the whole computer? dartvision starts again by itself (and updates) in a minute or two.'))act({type:'reboot'})">Reboot the Pi</button>
   <div class="small" style="margin-top:6px">Both install a newer version from GitHub if there is one, then start again. The page reconnects by itself.</div>
@@ -454,8 +498,14 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <div class="small">Darts you corrected, typed in or undid, and ones it couldn't read - newest first. Tap one to see what each camera saw (red ring: where that camera put the tip).</div>
   <div id="accview"></div><div id="acclist"></div></div></div>
 <div id="logo" class="overlay hidden" onclick="if(event.target===this)toggleLog()"><div class="panel logp">
-  <h2>Log</h2><div class="small">what the computer printed, newest at the bottom</div><div id="logl"></div>
-  <button onclick="toggleLog()">Close</button></div></div>
+  <h2>Log</h2>
+  <div class="hcard" id="hcard"></div>
+  <div class="tabs" id="lfilt" style="margin:8px 0 0"></div>
+  <div id="logl"></div>
+  <div class="lbtns"><button onclick="copyReport()">Copy for sharing</button>
+   <a href="/report.txt?download=1" download>Download</a><button onclick="toggleLog()">Close</button></div>
+  <div class="small" id="lmsg" style="margin-top:6px">Copy or Download gives one text file: version, settings, health and the log - paste or send it to Claude.</div>
+  <textarea id="lcopy" class="hidden" readonly></textarea></div></div>
 <script>
 let voiceOn=false, lastCall=null, flashT=0;
 try{voiceOn=localStorage.getItem('dv_voice')==='1'}catch(e){}
@@ -534,7 +584,7 @@ function render(){
  const notReady=S.ready===false;$('needset').classList.toggle('hidden',!notReady);$('menugame').classList.toggle('hidden',notReady);
  $('needmsg').textContent=S.no_cameras?'No cameras are set up yet.':'Not calibrated yet: '+(S.uncalibrated||[]).join(', ')+'. Games unlock once every camera is calibrated.';
  $('needbtn').textContent=S.no_cameras&&S.can_setup?'Set up cameras':'Calibrate cameras';
- $('ver').textContent=S.version||'';$('rebootb').classList.toggle('hidden',!S.can_reboot);
+ $('ver').textContent=S.version||'';$('updnote').textContent=S.update_note||'';renderHealth();$('rebootb').classList.toggle('hidden',!S.can_reboot);
  $('setopen').classList.toggle('hidden',!S.can_setup);$('camwarn').classList.toggle('hidden',!(S.can_setup&&S.no_cameras));$('setnote').textContent=S.setup_note||'';
  const unc=S.uncalibrated||[];$('calopen').classList.toggle('hidden',!S.can_calibrate);
  $('calwarn').classList.toggle('hidden',!unc.length);
@@ -543,7 +593,6 @@ function render(){
   $('modes').innerHTML=M.modes.map((m,i)=>`<button class="${i==M.mode?'on':''}" onclick="act({type:'mode',i:${i}})">${esc(m)}</button>`).join('');
   $('opts').innerHTML=M.opts.map((o,i)=>`<div class="opt"><span>${o[0]}</span><span><button onclick="act({type:'opt',row:${i+1},step:-1})">&lsaquo;</button> <b>${o[1]}</b> <button onclick="act({type:'opt',row:${i+1},step:1})">&rsaquo;</button></span></div>`).join('');
   $('players').innerHTML=M.players.map((p,i)=>`<div class="opt"><b style="color:var(--text)">${esc(p)}</b><button onclick="act({type:'remove_player',i:${i}})">remove</button></div>`).join('');
-  $('mstatus').textContent=S.note||'';
   $('kpo').classList.add('hidden');$('bano').classList.add('hidden');return}
  const G=S.game;$('gtitle').textContent=G.title;
  $('pcards').innerHTML=G.players.map(p=>`<div class="pcard ${p.active?'on':''}"><div><div class="pname">${esc(p.name)}</div><div class="psmall">${p.small}</div>
@@ -570,15 +619,48 @@ function showLost(){const stopped=S.screen==='stopped', down=fails>=3;
  $('lostt').textContent=stopped?'dartvision was closed on the computer':'Lost connection to the computer';
  $('lostl').textContent=stopped?'':'last heard from it '+Math.round((Date.now()-lastOk)/1000)+' s ago - retrying...'}
 function hhmm(t){const d=new Date(t*1000);return d.toTimeString().slice(0,8)}
-function toggleLog(){logOpen=!logOpen;$('logo').classList.toggle('hidden',!logOpen);renderLog(true)}
-function renderLog(scroll){
+let LOG=null, logF='all', REP='', logT=null, repT=0;
+const LF=[['all','All'],['problems','Problems'],['timing','Timing'],['health','Health'],['other','Other']];
+function kindOf(e){const t=e[2];return t.startsWith('timing:')?'timing':t.startsWith('health:')?'health':'other'}
+function logMatch(e){return logF==='all'||(logF==='problems'?e[1]!=='info':kindOf(e)===logF)}
+function setLogF(f){logF=f;renderLog(true)}
+async function fetchLog(){try{const r=await fetch('/log.json?n=3000',{cache:'no-store'});LOG=await r.json();renderLog(false,true)}catch(e){}
+ if(Date.now()-repT>10000){repT=Date.now();try{const r=await fetch('/report.txt?lines=400',{cache:'no-store'});REP=await r.text()}catch(e){}}}
+function toggleLog(){logOpen=!logOpen;$('logo').classList.toggle('hidden',!logOpen);$('lcopy').classList.add('hidden');
+ clearInterval(logT);if(logOpen){repT=0;fetchLog();logT=setInterval(fetchLog,2000)}else LOG=null;renderLog(true)}
+function copyReport(){const box=$('lcopy'),msg=$('lmsg');
+ if(!REP){msg.textContent='Still fetching the report - try again in a second';repT=0;fetchLog();return}
+ box.value=REP;box.classList.remove('hidden');box.focus();box.select();try{box.setSelectionRange(0,REP.length)}catch(e){}
+ let ok=false;try{ok=document.execCommand('copy')}catch(e){}
+ if(!ok&&navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(REP).then(()=>{msg.textContent='Copied - paste it into the chat with Claude'}).catch(()=>{});}
+ msg.textContent=ok?'Copied - paste it into the chat with Claude (the last 400 lines; Download has everything)':'Your browser blocked copying: the text is selected below - use Copy, or use Download';
+ repT=0}
+function f1(x){return x==null?'?':(+x).toFixed(1)}
+function renderHealth(){const H=S.health,h=$('hsum'),c=$('hcard');
+ if(!H){h.textContent='health: not measured on this computer';h.className='';c.innerHTML='<div class="small">no health readings</div>';return}
+ const hot=H.temp!=null&&H.temp>=70, warn=H.level!=='info';
+ const parts=[];if(H.temp!=null)parts.push(f1(H.temp)+'°C '+H.band);
+ if(H.now&&H.now.length)parts.push('NOW: '+H.now.join(', '));else if(H.since&&H.since.length)parts.push('since boot: '+H.since.join(', '));
+ if(H.cpu!=null)parts.push('CPU '+H.cpu+'%');
+ h.textContent='health: '+parts.join(' · ');h.className=warn||hot||(H.since&&H.since.length)?'lv-warn':'';
+ const thr=H.throttled==null?'':(H.now.length?`<div class="lv-error">Pi is ${esc(H.now.join(', '))} right now</div>`:'<div class="lv-good">Pi not slowed down right now</div>')+
+  (H.since.length?`<div class="lv-warn">since boot: ${esc(H.since.join(', '))} <span class="small">(${H.throttled})</span></div>`:'');
+ c.innerHTML=`<div><b class="${H.temp>=80?'lv-error':hot?'lv-warn':''}">${H.temp==null?'':f1(H.temp)+'°C'}</b> ${esc(H.band||'')}`+
+  (H.temp_max!=null?` <span class="small">hottest ${f1(H.temp_max)}°C since start (${esc(H.up)})</span>`:'')+'</div>'+thr+
+  '<div class="small" style="color:var(--muted)">'+[H.freq?`CPU ${f1(H.freq)}${H.freq_max?'/'+f1(H.freq_max):''} GHz`:'',
+   H.cpu!=null?`CPU ${H.cpu}% (dartvision ${H.own_cpu==null?'?':H.own_cpu}%)`:'',H.load!=null?`load ${H.load} on ${H.cores} cores`:'',
+   H.mem_total?`memory ${H.mem_used}/${H.mem_total} MB`:'',H.disk_free!=null?`disk ${H.disk_free} GB free`:'',H.fan!=null?`fan ${H.fan} rpm`:'']
+   .filter(Boolean).join(' · ')+'</div>'}
+function renderLog(scroll,fresh){
  const L=S.log||[], i=$('infot');
  if(offline){i.textContent="can't reach the computer - is dartvision running?";i.className='lv-error'}
  else{const e=L[L.length-1];
   if(!e){i.textContent='no messages';i.className=''}
   else{i.textContent=hhmm(e[0])+'  '+e[2];const fresh=Date.now()/1000-e[0]<60;i.className=e[1]!=='info'&&fresh?'lv-'+e[1]:''}}
- if(logOpen){const box=$('logl'),end=box.scrollTop+box.clientHeight>=box.scrollHeight-20;
-  box.innerHTML=L.map(e=>`<div class="lv-${e[1]}">${hhmm(e[0])}  ${esc(e[2])}</div>`).join('')||'<div>nothing yet</div>';
+ if(logOpen&&(scroll||fresh||!LOG)){const box=$('logl'),end=box.scrollTop+box.clientHeight>=box.scrollHeight-20;
+  const A=LOG||L, M=A.filter(logMatch);
+  $('lfilt').innerHTML=LF.map(([k,n])=>`<button class="${k===logF?'on':''}" onclick="setLogF('${k}')">${n} <span class="small">${A.filter(e=>k==='all'||(k==='problems'?e[1]!=='info':kindOf(e)===k)).length}</span></button>`).join('');
+  box.innerHTML=M.slice(-800).map(e=>`<div class="lv-${e[1]}">${hhmm(e[0])}  ${esc(e[2])}</div>`).join('')||'<div>nothing here yet</div>';
   if(scroll||end)box.scrollTop=box.scrollHeight}}
 async function poll(){try{const ac=new AbortController(),to=setTimeout(()=>ac.abort(),2500);
  const r=await fetch('/state'+(voiceOn?'?voice=1':''),{cache:'no-store',signal:ac.signal});clearTimeout(to);const s=await r.json();

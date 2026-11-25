@@ -43,6 +43,10 @@ DEFAULT = {
         "warm": True,              # espeak: keep it running between calls (quicker); false = start it each time
     },
     "lights": {"type": "none"},    # flash on a 180 - see dartvision/lights.py
+    "health": {
+        "enabled": True,           # watch the computer's temperature, throttling, CPU, memory, disk
+        "log_every_min": 10,       # a "health:" line this often (and straight away when something changes)
+    },
 }
 
 
@@ -51,7 +55,7 @@ def load_config(path="config.yaml"):
     if os.path.exists(path):
         with open(path) as f:
             user = yaml.safe_load(f) or {}
-        nested = {k: user.pop(k, {}) or {} for k in ("detection", "update", "voice", "lights", "record")}
+        nested = {k: user.pop(k, {}) or {} for k in ("detection", "update", "voice", "lights", "record", "health")}
         cfg.update(user)
         for k, v in nested.items():
             cfg[k].update(v)

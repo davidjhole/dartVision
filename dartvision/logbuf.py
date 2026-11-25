@@ -9,7 +9,7 @@ import threading
 import time
 import traceback
 
-MAX = 300
+MAX = 3000                                    # kept for the log screen and the report
 _lines = collections.deque(maxlen=MAX)        # (time, level, text)
 _lock = threading.Lock()
 _count = 0                                    # goes up with every line (lets callers spot changes)
