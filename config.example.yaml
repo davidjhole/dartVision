@@ -17,6 +17,10 @@ detection:
   max_dart_px: 25000
   fuse_tolerance_mm: 12
 record_dir: recordings
+record:                 # the before/after pictures of each throw (to re-run detection and tune it)
+  save: all             # all | unknown (only darts it couldn't read, or you corrected / undid) | off
+  format: jpg           # jpg: ~2 MB a dart with 4 cameras;  png: ~13 MB a dart
+  max_mb: 2000          # the oldest recordings are deleted to stay under this (0 = no limit)
 update:
   repo: davidjhole/dartVision
   check_on_start: true

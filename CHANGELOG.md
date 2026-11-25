@@ -13,6 +13,17 @@ Newest first. The update checker shows the section for the version you're updati
   summary and the log. Settings shows a one-line health summary too.
 - The yellow "updated to ..." line is gone from the start screen; it's under the version in Settings
   (and in the log).
+- **Accuracy in Settings:** how many darts it read right this session and over all saved darts
+  (from the labels made while playing - corrections, typed-in and undone darts; nothing is re-run),
+  and **Darts it got wrong**: each one with what every camera saw before and after, and where that
+  camera put the tip. `replay` stays a command for tuning on a computer.
+- **Recordings take far less space and can't fill the card.** Throw pictures are saved as JPEG (about
+  2 MB a dart with 4 cameras, down from about 13 MB as PNG; re-running detection scores the same), and
+  the oldest recordings are deleted to stay under 2 GB. **On first start this deletes the oldest
+  recordings beyond 2 GB.** New `record:` settings: `save: all | unknown | off`, `format: jpg | png`,
+  `max_mb`. `unknown` keeps the darts it couldn't read *and* the ones you correct or undo (a turn's
+  darts are held in memory until the darts are pulled). Corrected / undone / unread darts are the
+  last to be deleted when the limit is reached.
 - **Much less work (and heat) while waiting for a dart.** Only every other camera picture is decoded
   while waiting for a throw, and one in five on the menu. Every picture is used again as soon as
   something moves. The main loop no longer copies all the camera pictures when none of them is new,

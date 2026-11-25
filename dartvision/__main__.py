@@ -267,7 +267,11 @@ def cmd_play(args):
     if hcfg.get("enabled", True):
         monitor = health.Monitor(log_every_min=hcfg.get("log_every_min", 10),
                                  disk_path=cfg["record_dir"] if os.path.isdir(cfg["record_dir"]) else ".").start()
-    rec = None if args.no_record else Recorder(cfg["record_dir"])
+    rcfg = cfg["record"]
+    save_what = str(rcfg.get("save", "all")).lower()
+    rec = None if args.no_record or save_what in ("off", "none", "false", "no") else \
+        Recorder(cfg["record_dir"], fmt=rcfg.get("format", "jpg"), max_mb=rcfg.get("max_mb", 2000))
+    record_kinds = ("UNKNOWN",) if save_what == "unknown" else ("DART", "UNKNOWN")
     results_path = os.path.join(cfg["record_dir"], "results.jsonl")
 
     WIN = "dartvision"
@@ -382,12 +386,19 @@ def cmd_play(args):
         print(f"Game on: {getattr(game, 'mode_title', game.name)} - {', '.join(players)}"
               + (f"   recording to {rec.dir}" if rec else ""))
 
+    def kept(d):
+        """A throw's recording folder, saving it now if its pictures were only held in memory
+        (record: save: unknown keeps a turn's darts in memory, and saves one if it's corrected)."""
+        if isinstance(d, tuple) and d and d[0] == "held":
+            return rec.save(*d[1:]) if rec else None
+        return d
+
     def end_turn():
         nonlocal turn_recs
         for d in turn_recs:
-            if d:
+            if isinstance(d, str):
                 accept_if_unlabelled(d)      # not corrected = it was right
-        turn_recs = []
+        turn_recs = []                       # darts held in memory and not corrected: let them go
 
     def finish_leg():
         """Leg won and acknowledged (Enter / darts pulled): next leg, or back to the menu."""
@@ -434,6 +445,7 @@ def cmd_play(args):
         else:
             game.set_dart(i, lab, pts)
             if i < len(turn_recs) and turn_recs[i]:
+                turn_recs[i] = kept(turn_recs[i])
                 set_label(turn_recs[i], lab, "corrected")
             if i < len(marks) and marks[i]:
                 marks[i] = (marks[i][0], marks[i][1], lab)
@@ -557,7 +569,7 @@ def cmd_play(args):
                 set_dart_label(i, str(a.get("label", "")))
         elif t == "undo":
             if turn_recs:
-                d = turn_recs.pop()
+                d = kept(turn_recs.pop())
                 if d:
                     set_label(d, "FALSE", "undone")      # remember it as a false detection
             if marks:
@@ -624,6 +636,7 @@ def cmd_play(args):
             web.set_report(lambda n: health.report(
                 version, cfg, calibrated=list(cals), monitor=monitor, max_lines=n,
                 extra={"speed now": pace.speeds(cams), "screen": screen}))
+            web.set_recordings(cfg["record_dir"], rec.dir if rec else None, save_what)
             print(f"\nScoreboard / remote: open  {url}  on a phone, iPad or TV (same Wi-Fi)\n")
     headless = args.headless
     if headless:
@@ -656,7 +669,7 @@ def cmd_play(args):
             c.decode_every = skip
         if ev and screen == "play":
             t_save = time.monotonic()
-            saved = rec.save(ev["before_raw"], frames, ev) if rec and ev["type"] in ("DART", "UNKNOWN") else None
+            saved = rec.save(ev["before_raw"], frames, ev) if rec and ev["type"] in record_kinds else None
             if ev["type"] in ("DART", "UNKNOWN", "TAKEOUT", "REMOVED"):
                 print(pace.describe(ev, cams, time.monotonic() - t_save))
             if game.leg_winner and ev["type"] == "TAKEOUT":
@@ -670,6 +683,8 @@ def cmd_play(args):
                     status = f"{ev['label']} ({ev['points']})  from {ev['cams_used']} cam(s)"
                     if res == "bust":
                         status += "  BUST"
+                    if saved is None and rec:            # save: unknown - keep it in case it's corrected
+                        saved = ("held", ev["before_raw"], frames, ev)
                     turn_recs.append(saved)
                     marks.append((ev["pos_mm"][0], ev["pos_mm"][1], ev["label"]))
                 last = {n: r for n, r in ev["cams"].items() if r.get("ok")}
