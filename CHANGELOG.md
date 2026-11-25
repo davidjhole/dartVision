@@ -3,6 +3,33 @@
 Newest first. The update checker shows the section for the version you're updating to.
 
 ## Unreleased
+- **Accuracy in Settings:** how many darts it read right this session and over all saved darts
+  (from the labels made while playing - corrections, typed-in and undone darts; nothing is re-run),
+  and **Darts it got wrong**: each one with what every camera saw before and after, and where that
+  camera put the tip. `replay` stays a command for tuning on a computer.
+- **Recordings take far less space and can't fill the card.** Throw pictures are saved as JPEG (about
+  2 MB a dart with 4 cameras, down from about 13 MB as PNG; re-running detection scores the same), and
+  the oldest recordings are deleted to stay under 2 GB. **On first start this deletes the oldest
+  recordings beyond 2 GB.** New `record:` settings: `save: all | unknown | off`, `format: jpg | png`,
+  `max_mb`. `unknown` keeps the darts it couldn't read *and* the ones you correct or undo (a turn's
+  darts are held in memory until the darts are pulled). Corrected / undone / unread darts are the
+  last to be deleted when the limit is reached.
+- **Much less work (and heat) while waiting for a dart.** Only every other camera picture is decoded
+  while waiting for a throw, and one in five on the menu. Every picture is used again as soon as
+  something moves. The main loop no longer copies all the camera pictures when none of them is new,
+  and the phone page's state is refreshed 10 times a second, not 200.
+- **Faster again on a Pi:** finding a dart is about 2.5x quicker and a pull-out about 4x. The
+  cameras are worked on side by side, each change picture is made once and reused, and only the part
+  of the picture around the board is used.
+- **The settle wait counts real frames:** a frame now means a new picture from *every* camera, not just
+  from any one of them. With 4 cameras the wait had been about a quarter of what it should be, so a
+  dart could be looked at before every camera had a still picture of it (reads as "couldn't read that one").
+- The `timing:` line gives the reason when a camera couldn't find the dart, and the loop time is the
+  typical value, no longer pushed up by the slow pass that did the detection.
+- **Pi log fixed:** `journalctl --user -u dartvision` said "No journal files were found" because Pi OS keeps
+  its log in memory only. `setup_pi.sh` now keeps the log on disk (capped at 100 MB), and the service
+  prints each line straight away. A new `scripts/setup_pi.sh log` shows the log. On a Pi that's already
+  set up, run `scripts/setup_pi.sh service` once.
 - **Quicker scores on a Raspberry Pi.** The pictures of each throw are saved in the background (eight
   PNGs per dart were holding the score up for a couple of seconds on a Pi), finding the dart is about
   3x faster, and the motion check only shrinks each frame instead of blurring it at full size.

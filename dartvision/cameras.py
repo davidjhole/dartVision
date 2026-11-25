@@ -56,6 +56,8 @@ class Camera:
         self._settings = (width, height, fps, exposure)
         self.frame, self.stamp, self.count = None, 0.0, 0
         self.reconnects = 0
+        self.grabbed = 0            # pictures taken off the camera (decoded or not)
+        self.decode_every = 1       # >1: take every picture from the camera but only decode every n-th
         self._lock = threading.Lock()
         self._run = True
         self._gen = 0
@@ -96,10 +98,22 @@ class Camera:
         self._t.start()
 
     def _loop(self, gen, cap):
+        n = 0
         while self._run and gen == self._gen:
-            ok, f = cap.read()
-            if not ok:
+            # grab() takes the picture off the camera (cheap); retrieve() decodes the JPEG (the
+            # expensive part). Pictures not needed are grabbed and dropped without decoding.
+            if not cap.grab():
                 time.sleep(0.01)
+                continue
+            n += 1
+            self.grabbed += 1
+            every = max(1, int(self.decode_every))
+            if every > 1 and n % every and self.frame is not None:
+                with self._lock:
+                    self.stamp = time.time()        # still alive, just not decoded
+                continue
+            ok, f = cap.retrieve()
+            if not ok or f is None:
                 continue
             if gen != self._gen:
                 break

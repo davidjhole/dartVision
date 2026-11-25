@@ -6,7 +6,9 @@ fitting). It is simple to understand and tune; a trained tip detector can
 replace `find_dart_tip` later without touching anything else.
 """
 import math
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import numpy as np
@@ -14,6 +16,8 @@ import numpy as np
 from . import board
 
 SMALL_W = 320  # motion is checked on a downscaled copy for speed
+# the cameras are worked on side by side (OpenCV and numpy let go of Python's lock while they work)
+_POOL = ThreadPoolExecutor(max_workers=max(1, min(4, os.cpu_count() or 1)), thread_name_prefix="detect")
 
 
 def prep(frame):
@@ -266,13 +270,19 @@ class ThrowTracker:
             k = np.zeros((301, 1), np.uint8); k[150:] = 1
             self.roi[name] = cv2.dilate(m, k, anchor=(0, 150))
         self.zone = {n: tip_zone(frame_shapes[n][:2], cal["H"]) for n, cal in calibs.items()}
+        self.box = {}                 # the part of each picture that can matter (around the board)
+        for n, roi in self.roi.items():
+            ys, xs = np.nonzero(roi)
+            if len(ys):
+                self.box[n] = (max(0, ys.min() - 8), ys.max() + 9, max(0, xs.min() - 8), xs.max() + 9)
         self.state = "IDLE"
         self.quiet = 0
         self.prev_small = {}
         self.reference = {}   # board as it was after the last settled event
         self.empty = {}       # board with no darts (start of turn)
         self.darts_on_board = 0
-        self.dart_masks = []  # per dart on the board: {camera: where it changed the picture}
+        self.dart_masks = []  # per dart on the board: {camera: pixel indexes where it changed the picture}
+        self._de = {}
         self.moved_at = self.quiet_at = 0.0
         self.last_timing = {}
 
@@ -321,31 +331,55 @@ class ThrowTracker:
             "detect": round(time.monotonic() - now, 3), "cams": ev.pop("_cam_s", {})}
         return ev
 
+    def _spot_empty(self, masks, g):
+        """How much of one dart's spot looks like the empty board again (0..1, median over cameras)."""
+        thr = self.det["diff_threshold"]
+        v = []
+        for n, idx in masks.items():
+            if n not in g or n not in self.empty or len(idx) < 20:
+                continue
+            if n not in self._de:                    # worked out once per decision
+                self._de[n] = colour_diff(self.empty[n], g[n]).ravel()
+            v.append(float((self._de[n][idx] <= thr).mean()))
+        return float(np.median(v)) if v else None
+
     def _darts_gone(self, g):
         """True if every dart we saw land has gone from where it was (the board looks empty
         there again). Unlike comparing the whole picture with the empty board, this still works
         when pulling the darts out nudged the board or a camera a pixel, or the light changed."""
         if not self.dart_masks:
             return False
-        thr = self.det["diff_threshold"]
         for masks in self.dart_masks:
-            gone = []
-            for n, m in masks.items():
-                if n not in g or n not in self.empty:
-                    continue
-                d = colour_diff(self.empty[n], g[n])
-                sel = m > 0
-                if sel.sum() < 20:
-                    continue
-                gone.append(float((d[sel] <= thr).mean()))
-            if not gone or float(np.median(gone)) < 0.7:
+            e = self._spot_empty(masks, g)
+            if e is None or e < 0.7:
                 return False
         return True
 
-    def _decide(self, g, raw=None):
+    def _masks(self, g):
+        """Change masks for every camera, against the last settled picture and the empty board.
+        Worked out once (in parallel, on the board's part of the picture only) and reused."""
         thr = self.det["diff_threshold"]
-        vs_ref = {n: (change_mask(self.reference[n], g[n], thr, self.roi.get(n)) > 0).sum() for n in g}
-        vs_empty = {n: (change_mask(self.empty[n], g[n], thr, self.roi.get(n)) > 0).sum() for n in g}
+
+        def one(n):
+            box = self.box.get(n)
+            ref, emp, now, roi = self.reference[n], self.empty[n], g[n], self.roi.get(n)
+            if box is None:
+                return n, change_mask(ref, now, thr, roi) > 0, change_mask(emp, now, thr, roi) > 0
+            y0, y1, x0, x1 = box
+            full_r = np.zeros(now.shape[:2], bool)
+            full_e = np.zeros(now.shape[:2], bool)
+            r = roi[y0:y1, x0:x1]
+            full_r[y0:y1, x0:x1] = change_mask(ref[y0:y1, x0:x1], now[y0:y1, x0:x1], thr, r) > 0
+            full_e[y0:y1, x0:x1] = change_mask(emp[y0:y1, x0:x1], now[y0:y1, x0:x1], thr, r) > 0
+            return n, full_r, full_e
+        out = list(_POOL.map(one, list(g)))
+        return {n: r for n, r, _ in out}, {n: e for n, _, e in out}
+
+    def _decide(self, g, raw=None):
+        self._de = {}
+        m_ref, m_emp = self._masks(g)
+        vs_ref = {n: int(m.sum()) for n, m in m_ref.items()}
+        vs_empty = {n: int(m.sum()) for n, m in m_emp.items()}
         changed = [n for n in g if vs_ref[n] >= self.det["min_dart_px"]]
         if not changed:
             return {"type": "NOTHING"}
@@ -357,26 +391,21 @@ class ThrowTracker:
         # a dart being pulled out also leaves a dart-shaped change - but there the picture goes
         # back to how the empty board looked. A new dart differs from the empty board too.
         if self.darts_on_board:
-            ratios = []
-            for n in changed:
-                m_ref = change_mask(self.reference[n], g[n], thr, self.roi.get(n)) > 0
-                m_emp = change_mask(self.empty[n], g[n], thr, self.roi.get(n)) > 0
-                ratios.append((m_ref & m_emp).sum() / max(1, m_ref.sum()))
+            ratios = [(m_ref[n] & m_emp[n]).sum() / max(1, vs_ref[n]) for n in changed]
             if ratios and float(np.median(ratios)) < 0.35:
                 self._forget_one_dart(g)
                 self.reference = dict(g)
                 self.darts_on_board = max(0, self.darts_on_board - 1)
                 return {"type": "REMOVED"}
-        per_cam, cam_s = {}, {}
-        for n in g:
-            cal = self.calibs.get(n)
-            if cal is None:
-                continue
+        def find(n):
             t0 = time.monotonic()
-            per_cam[n] = find_dart_tip(self.reference[n], g[n], cal["H_inv"], self.roi[n], self.det,
-                                       on_board=self.zone.get(n))
-            cam_s[n] = round(time.monotonic() - t0, 3)
-        masks = {n: change_mask(self.reference[n], g[n], thr, self.roi.get(n)) for n in changed}
+            r = find_dart_tip(self.reference[n], g[n], self.calibs[n]["H_inv"], self.roi[n], self.det,
+                              on_board=self.zone.get(n))
+            return n, r, round(time.monotonic() - t0, 3)
+        found = list(_POOL.map(find, [n for n in g if n in self.calibs]))   # the cameras side by side
+        per_cam = {n: r for n, r, _ in found}
+        cam_s = {n: s for n, _, s in found}
+        masks = {n: np.flatnonzero(m_ref[n]) for n in changed}    # where this dart changed the picture
         self.reference = dict(g)
         good = [r for r in per_cam.values() if r.get("ok")]
         if not good:
@@ -404,12 +433,6 @@ class ThrowTracker:
 
     def _forget_one_dart(self, g):
         """One dart was pulled out: drop the one whose spot looks most like the empty board."""
-        if not self.dart_masks:
-            return
-        thr = self.det["diff_threshold"]
-
-        def gone(masks):
-            v = [float((colour_diff(self.empty[n], g[n])[m > 0] <= thr).mean())
-                 for n, m in masks.items() if n in g and (m > 0).sum() >= 20]
-            return float(np.median(v)) if v else 0.0
-        self.dart_masks.pop(max(range(len(self.dart_masks)), key=lambda i: gone(self.dart_masks[i])))
+        if self.dart_masks:
+            self.dart_masks.pop(max(range(len(self.dart_masks)),
+                                    key=lambda i: self._spot_empty(self.dart_masks[i], g) or 0.0))

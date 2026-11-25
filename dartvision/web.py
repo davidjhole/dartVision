@@ -25,11 +25,19 @@ _voice_seen = {"t": 0.0}     # last time a page with its voice switched on asked
 VOICE_TIMEOUT = 3.0
 _calib = {"h": None}
 _camsetup = {"h": None}
+_rec = {"root": None, "current": None, "save": "all"}
 
 
 def set_calibrator(c):
     """Let the page calibrate the cameras (None turns it off)."""
     _calib["h"] = c
+
+
+def set_recordings(root, current=None, save="all"):
+    """Let the Settings page show how well darts have been read (from the saved throws) and their
+    pictures: /rec/accuracy and /rec/pic?id=SESSION/THROW&cam=NAME&which=before|after.
+    current: this session's folder (or None)."""
+    _rec.update(root=root, current=current, save=save)
 
 
 def set_camsetup(c):
@@ -119,6 +127,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, PAGE, "text/html; charset=utf-8")
         elif self.path.startswith("/calib/"):
             self._calib_get()
+        elif self.path.startswith("/rec/"):
+            self._rec_get()
         elif self.path.startswith("/setup/frame"):
             c = _camsetup["h"]
             idx = parse_qs(urlparse(self.path).query).get("index", [""])[0]
@@ -128,6 +138,21 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, jpg, "image/jpeg")
         else:
             self._send(404, "not found", "text/plain")
+
+    def _rec_get(self):
+        from . import recorder
+        root, u = _rec["root"], urlparse(self.path)
+        if root is None:
+            return self._json(404, {"ok": False, "error": "recordings aren't available"})
+        if u.path == "/rec/accuracy":
+            return self._json(200, {**recorder.accuracy(root, _rec["current"]), "save": _rec["save"]})
+        if u.path == "/rec/pic":
+            q = parse_qs(u.query)
+            got = recorder.picture(root, q.get("id", [""])[0], q.get("cam", [""])[0], q.get("which", ["after"])[0])
+            if got is None:
+                return self._send(404, "no picture", "text/plain")
+            return self._send(200, got[0], got[1])
+        self._send(404, "not found", "text/plain")
 
     def _json(self, code, obj):
         self._send(code, json.dumps(obj), "application/json")
@@ -301,6 +326,12 @@ table.cr td.n{color:var(--text)} table.cr td.closed{color:var(--dim)}
 #loupe{position:absolute;top:8px;width:150px;height:150px;border:2px solid var(--accent);border-radius:50%;pointer-events:none;background:#000}
 .good{color:var(--good)} .bad{color:var(--bad)}
 #setup{max-width:1100px;margin:auto}
+.accrow{display:flex;gap:10px;align-items:center;background:var(--panel);border-radius:12px;padding:10px 14px;margin:6px 0;cursor:pointer}
+.accrow b{min-width:4.5em} .accrow.on{box-shadow:inset 4px 0 0 var(--accent)}
+.accpics{position:relative;line-height:0;background:#000;border-radius:10px;overflow:hidden;margin:8px 0}
+.accpics img{width:100%;display:block}
+.acctip{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border:3px solid var(--bad);border-radius:50%}
+.acco .panel{max-height:90vh;overflow:auto;width:min(900px,100%)}
 .scams{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin:10px 0}
 .scam{background:var(--panel);border-radius:14px;padding:10px;border:2px solid transparent}
 .scam.on{border-color:var(--good)}
@@ -337,6 +368,10 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <button id="setopen" class="calbtn hidden" onclick="act({type:'setup_open'})">Set up cameras</button>
   <div id="calwarn" class="warn hidden"></div>
   <button id="calopen" class="calbtn hidden" onclick="openCal()">Calibrate cameras</button>
+  <div class="sub">Accuracy <span class="small">(from the darts saved while playing)</span></div>
+  <div class="opt"><span>This game session</span><b id="accthis" style="color:var(--text)">-</b></div>
+  <div class="opt"><span>All saved darts</span><b id="accall" style="color:var(--text)">-</b></div>
+  <button class="calbtn" id="accbtn" onclick="openAcc()">Darts it got wrong</button>
   <div class="sub">Sound</div>
   <div class="opt"><span>Caller's voice on this phone / screen</span><button class="vbtn" onclick="toggleVoice()">Voice off</button></div>
   <div class="sub">Light</div>
@@ -414,6 +449,10 @@ font-weight:900;font-size:min(40vw,60vh);color:var(--accent);border:24px solid v
   <h2 id="lostt">Lost connection</h2><div id="lostl" class="title"></div><br>
   <div class="small">This page reconnects by itself when dartvision is running again.</div>
 </div></div>
+<div id="acco" class="overlay acco hidden" onclick="if(event.target===this)closeAcc()"><div class="panel">
+  <div class="row"><h2 style="flex:1">Darts it got wrong</h2><button onclick="closeAcc()">Close</button></div>
+  <div class="small">Darts you corrected, typed in or undid, and ones it couldn't read - newest first. Tap one to see what each camera saw (red ring: where that camera put the tip).</div>
+  <div id="accview"></div><div id="acclist"></div></div></div>
 <div id="logo" class="overlay hidden" onclick="if(event.target===this)toggleLog()"><div class="panel logp">
   <h2>Log</h2><div class="small">what the computer printed, newest at the bottom</div><div id="logl"></div>
   <button onclick="toggleLog()">Close</button></div></div>
@@ -455,7 +494,34 @@ function boardSVG(marks){const R=[6.35,15.9,99,107,162,170];let s='';
  (marks||[]).forEach(m=>{s+=`<circle cx="${m.x}" cy="${-m.y}" r="9" fill="${col[m.i%3]}" stroke="#111" stroke-width="2"/>`});
  return s}
 let setOpen=false;
-function openSettings(){setOpen=true;render();scrollTo(0,0)}
+function openSettings(){setOpen=true;render();scrollTo(0,0);loadAcc()}
+let ACC=null, accSel=null, accCam='', accWhich='after';
+async function loadAcc(){try{const r=await fetch('/rec/accuracy',{cache:'no-store'});if(!r.ok)throw 0;ACC=await r.json()}catch(e){ACC=null}renderAcc()}
+function accText(c,mode){if(!c||!c.saved)return 'nothing saved yet';
+ const x=[];if(c.corrected)x.push(c.corrected+' corrected');if(c.entered)x.push(c.entered+' typed in');
+ if(c.false)x.push(c.false+' false');if(c.unread)x.push(c.unread+" couldn't read");
+ if(mode==='unknown'||c.pct==null)return (x.join(', ')||c.saved+' saved')+(mode==='unknown'?' (only misread darts are saved)':'');
+ return `${c.right} of ${c.judged} right (${c.pct}%)`+(x.length?' - '+x.join(', '):'')}
+function renderAcc(){const off=!ACC;$('accbtn').classList.toggle('hidden',off||!ACC.wrong.length);
+ $('accthis').textContent=off?'recording is off':ACC.session?accText(ACC.this,ACC.save):'not recording';
+ $('accall').textContent=off?'-':accText(ACC.all,ACC.save)+(ACC.sessions>1?` - ${ACC.sessions} sessions`:'');
+ if(!$('acco').classList.contains('hidden'))renderAccList()}
+function openAcc(){accSel=null;$('acco').classList.remove('hidden');renderAccList()}
+function closeAcc(){$('acco').classList.add('hidden')}
+function accPick(i){accSel=i;const w=ACC.wrong[i];accCam=w.cams[0]||'';accWhich='after';renderAccList()}
+function renderAccList(){const W=(ACC&&ACC.wrong)||[];
+ const what=w=>w.source==='undone'?`<b>${esc(w.read)}</b> no dart there (undone)`:w.source==='unread'?`<b>?</b> couldn't read it`:
+  `<b>${esc(w.true)}</b> read as ${esc(w.read)}${w.source==='entered'?' (typed in)':''}`;
+ $('acclist').innerHTML=W.map((w,i)=>`<div class="accrow${i===accSel?' on':''}" onclick="accPick(${i})">${what(w)}<span class="small" style="margin-left:auto">${esc(w.session.slice(14,16)+'/'+w.session.slice(12,14))} ${esc(w.time.slice(0,5))}</span></div>`).join('')||'<div class="small">none</div>';
+ const v=$('accview');if(accSel==null||!W[accSel]){v.innerHTML='';return}
+ const w=W[accSel];if(!w.cams.length){v.innerHTML='<div class="small">No pictures kept for this one.</div>';return}
+ const tip=w.tips[accCam];
+ v.innerHTML=`<div class="tabs">${w.cams.map((c,j)=>`<button class="${c===accCam?'on':''}" onclick="accCam=ACC.wrong[accSel].cams[${j}];renderAccList()">${esc(c)}</button>`).join('')}
+  <button class="${accWhich==='before'?'on':''}" onclick="accWhich='before';renderAccList()">Before</button>
+  <button class="${accWhich==='after'?'on':''}" onclick="accWhich='after';renderAccList()">After</button></div>
+  <div class="accpics"><img id="accimg" src="/rec/pic?id=${encodeURIComponent(w.id)}&cam=${encodeURIComponent(accCam)}&which=${accWhich}">
+  ${tip&&accWhich==='after'?'<div class="acctip" id="acctip"></div>':''}</div>`;
+ const img=$('accimg');img.onload=()=>{const t=$('acctip');if(t&&tip){t.style.left=(100*tip[0]/img.naturalWidth)+'%';t.style.top=(100*tip[1]/img.naturalHeight)+'%'}}}
 function closeSettings(){setOpen=false;render();scrollTo(0,0)}
 function needGo(){if(S.no_cameras&&S.can_setup)act({type:'setup_open'});else if(S.can_calibrate)openCal();else openSettings()}
 function render(){

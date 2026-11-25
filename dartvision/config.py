@@ -22,6 +22,11 @@ DEFAULT = {
         "fuse_tolerance_mm": 12,   # cameras agreeing within this are averaged
     },
     "record_dir": "recordings",
+    "record": {
+        "save": "all",             # all | unknown (only darts it couldn't read, or you corrected / undid) | off
+        "format": "jpg",           # jpg (~2 MB a dart) | png (~13 MB a dart, slow on a Pi's SD card)
+        "max_mb": 2000,            # keep the recordings under this: the oldest are deleted (0 = no limit)
+    },
     "update": {
         "repo": "davidjhole/dartVision",  # GitHub "owner/name" to check for new releases
         "check_on_start": True,
@@ -46,7 +51,7 @@ def load_config(path="config.yaml"):
     if os.path.exists(path):
         with open(path) as f:
             user = yaml.safe_load(f) or {}
-        nested = {k: user.pop(k, {}) or {} for k in ("detection", "update", "voice", "lights")}
+        nested = {k: user.pop(k, {}) or {} for k in ("detection", "update", "voice", "lights", "record")}
         cfg.update(user)
         for k, v in nested.items():
             cfg[k].update(v)

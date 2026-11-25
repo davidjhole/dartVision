@@ -261,7 +261,11 @@ def cmd_play(args):
     tracker.reset(frames)
     from .timing import Pace
     pace = Pace()
-    rec = None if args.no_record else Recorder(cfg["record_dir"])
+    rcfg = cfg["record"]
+    save_what = str(rcfg.get("save", "all")).lower()
+    rec = None if args.no_record or save_what in ("off", "none", "false", "no") else \
+        Recorder(cfg["record_dir"], fmt=rcfg.get("format", "jpg"), max_mb=rcfg.get("max_mb", 2000))
+    record_kinds = ("UNKNOWN",) if save_what == "unknown" else ("DART", "UNKNOWN")
     results_path = os.path.join(cfg["record_dir"], "results.jsonl")
 
     WIN = "dartvision"
@@ -376,12 +380,19 @@ def cmd_play(args):
         print(f"Game on: {getattr(game, 'mode_title', game.name)} - {', '.join(players)}"
               + (f"   recording to {rec.dir}" if rec else ""))
 
+    def kept(d):
+        """A throw's recording folder, saving it now if its pictures were only held in memory
+        (record: save: unknown keeps a turn's darts in memory, and saves one if it's corrected)."""
+        if isinstance(d, tuple) and d and d[0] == "held":
+            return rec.save(*d[1:]) if rec else None
+        return d
+
     def end_turn():
         nonlocal turn_recs
         for d in turn_recs:
-            if d:
+            if isinstance(d, str):
                 accept_if_unlabelled(d)      # not corrected = it was right
-        turn_recs = []
+        turn_recs = []                       # darts held in memory and not corrected: let them go
 
     def finish_leg():
         """Leg won and acknowledged (Enter / darts pulled): next leg, or back to the menu."""
@@ -428,6 +439,7 @@ def cmd_play(args):
         else:
             game.set_dart(i, lab, pts)
             if i < len(turn_recs) and turn_recs[i]:
+                turn_recs[i] = kept(turn_recs[i])
                 set_label(turn_recs[i], lab, "corrected")
             if i < len(marks) and marks[i]:
                 marks[i] = (marks[i][0], marks[i][1], lab)
@@ -551,7 +563,7 @@ def cmd_play(args):
                 set_dart_label(i, str(a.get("label", "")))
         elif t == "undo":
             if turn_recs:
-                d = turn_recs.pop()
+                d = kept(turn_recs.pop())
                 if d:
                     set_label(d, "FALSE", "undone")      # remember it as a false detection
             if marks:
@@ -614,15 +626,18 @@ def cmd_play(args):
             web.set_calibrator(WebCalibrator(cams))
             camsetup = CameraSetup(args.config)
             web.set_camsetup(camsetup)
+            web.set_recordings(cfg["record_dir"], rec.dir if rec else None, save_what)
             print(f"\nScoreboard / remote: open  {url}  on a phone, iPad or TV (same Wi-Fi)\n")
     headless = args.headless
     if headless:
         print("Running without a screen - use the web page. Ctrl+C to stop.")
 
     running = False
+    last_pub, web_dirty = 0.0, False
     while True:
         if url:
             for a in web.take_actions():
+                web_dirty = True
                 try:
                     act(a)
                 except Exception as e:  # noqa - a bad tap mustn't stop the game
@@ -630,13 +645,21 @@ def cmd_play(args):
         if want:
             break
         pace.loop_start()
-        frames = grab(cams)
         # only new pictures count: the same frame twice would look "quiet" and end the wait too soon
         fresh = pace.fresh(cams)
-        ev = tracker.update(frames) if cals and fresh else None
+        if fresh or not headless:
+            frames = grab(cams)          # copying 4 full pictures each pass kept a Pi busy (and hot)
+        playing = screen == "play" and bool(cals)
+        ev = tracker.update(frames) if playing and fresh else None
+        # waiting for a dart: every other picture is enough to notice one (it stays on the board);
+        # in the menu a few a second. Each picture skipped is one less to decode - most of the
+        # Pi's work. Every picture is used once something moves.
+        skip = 1 if playing and tracker.state != "IDLE" else 2 if playing else 5
+        for c in cams:
+            c.decode_every = skip
         if ev and screen == "play":
             t_save = time.monotonic()
-            saved = rec.save(ev["before_raw"], frames, ev) if rec and ev["type"] in ("DART", "UNKNOWN") else None
+            saved = rec.save(ev["before_raw"], frames, ev) if rec and ev["type"] in record_kinds else None
             if ev["type"] in ("DART", "UNKNOWN", "TAKEOUT", "REMOVED"):
                 print(pace.describe(ev, cams, time.monotonic() - t_save))
             if game.leg_winner and ev["type"] == "TAKEOUT":
@@ -650,6 +673,8 @@ def cmd_play(args):
                     status = f"{ev['label']} ({ev['points']})  from {ev['cams_used']} cam(s)"
                     if res == "bust":
                         status += "  BUST"
+                    if saved is None and rec:            # save: unknown - keep it in case it's corrected
+                        saved = ("held", ev["before_raw"], frames, ev)
                     turn_recs.append(saved)
                     marks.append((ev["pos_mm"][0], ev["pos_mm"][1], ev["label"]))
                 last = {n: r for n, r in ev["cams"].items() if r.get("ok")}
@@ -669,7 +694,9 @@ def cmd_play(args):
                     open_entry("pending", "Couldn't read that dart - what was it?")
 
         run_caller()
-        if url:
+        now_pub = time.monotonic()
+        if url and (ev or now_pub - last_pub >= 0.1 or web_dirty):
+            last_pub, web_dirty = now_pub, False
             web.publish(web_state())
             if setup_scan:
                 setup_scan = False
@@ -681,7 +708,7 @@ def cmd_play(args):
                 from . import autoupdate
                 autoupdate.started_ok()          # made it into the game loop: keep this version
         if headless:
-            time.sleep(0.005 if cams else 0.05)
+            time.sleep(0.01 if cams else 0.05)
             continue
         W, H_win = ui.window_size(WIN)
         bar_h = ui.info_bar_height(H_win)
